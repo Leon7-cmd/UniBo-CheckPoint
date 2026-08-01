@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "478813957014",
+    "project_id": "checkpoint-f18cb",
+    "storage_bucket": "checkpoint-f18cb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:478813957014:android:f79a5db8b5ff9e1cf1cbb7",
+        "android_client_info": {
+          "package_name": "com.example.checkpoint"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHDP-32wwuwsQ6sY_D1LdzWidgnBft8K4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

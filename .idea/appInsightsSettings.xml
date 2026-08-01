@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.checkpoint" />
+                  <option name="mobileSdkAppId" value="1:478813957014:android:f79a5db8b5ff9e1cf1cbb7" />
+                  <option name="projectId" value="checkpoint-f18cb" />
+                  <option name="projectNumber" value="478813957014" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
