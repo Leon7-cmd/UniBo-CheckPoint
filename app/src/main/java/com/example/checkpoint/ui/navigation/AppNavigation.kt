@@ -1,14 +1,19 @@
 package com.example.checkpoint.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.checkpoint.ui.main.MainScreen
 import com.example.checkpoint.ui.sections.auth.AuthScreen
 import com.example.checkpoint.ui.sections.auth.AuthUiState
 import com.example.checkpoint.ui.sections.auth.AuthViewModel
-import com.example.checkpoint.ui.main.MainScreen
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.serialization.Serializable
 
@@ -18,10 +23,41 @@ import kotlinx.serialization.Serializable
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val auth = remember { FirebaseAuth.getInstance() }
+
+    // 1. Check if user is logged in
+    var currentUser by remember { mutableStateOf(auth.currentUser) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // Listener to update currentUser and isLoading
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            currentUser = firebaseAuth.currentUser
+            isLoading = false
+        }
+        auth.addAuthStateListener(listener)
+        onDispose {
+            auth.removeAuthStateListener(listener)
+        }
+    }
+
+    // 2. Shows a loading screen while the user is being checked
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    // 3. Set the start destination based on the current user
+    val startDestination = if (currentUser != null) MainAppRoute else AuthRoute
 
     NavHost(
         navController = navController,
-        startDestination = AuthRoute
+        startDestination = startDestination
     ) {
         composable<AuthRoute> {
             val viewModel: AuthViewModel = viewModel()
@@ -50,7 +86,7 @@ fun AppNavigation() {
         composable<MainAppRoute> {
             MainScreen(
                 onLogout = {
-                    FirebaseAuth.getInstance().signOut()
+                    auth.signOut()
                     navController.navigate(AuthRoute) {
                         popUpTo<MainAppRoute> { inclusive = true }
                     }
