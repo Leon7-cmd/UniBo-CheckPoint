@@ -1,6 +1,5 @@
 package com.example.checkpoint.ui.navigation
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -9,6 +8,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.checkpoint.ui.auth.AuthScreen
 import com.example.checkpoint.ui.auth.AuthUiState
 import com.example.checkpoint.ui.auth.AuthViewModel
+import com.example.checkpoint.ui.main.MainScreen
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.serialization.Serializable
 
 @Serializable object AuthRoute
@@ -47,7 +48,14 @@ fun AppNavigation() {
         }
 
         composable<MainAppRoute> {
-            Text("Benvenuto in CHECK POINT!")
+            MainScreen(
+                onLogout = {
+                    FirebaseAuth.getInstance().signOut()
+                    navController.navigate(AuthRoute) {
+                        popUpTo<MainAppRoute> { inclusive = true }
+                    }
+                }
+            )
         }
     }
 }
