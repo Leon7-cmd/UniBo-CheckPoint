@@ -1,4 +1,4 @@
-package com.example.checkpoint.ui.auth
+package com.example.checkpoint.ui.sections.auth
 
 sealed interface AuthUiState {
     object Idle : AuthUiState

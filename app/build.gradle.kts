@@ -65,4 +65,5 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
     implementation(libs.kotlinx.coroutines.play.services)
+    implementation("io.coil-kt:coil-compose:2.6.0")
 }

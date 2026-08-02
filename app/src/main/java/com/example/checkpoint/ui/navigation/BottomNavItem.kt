@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
 
 // Serializable routs for navigation
 @Serializable object ProfileRoute
-@Serializable object CatalogRoute
+@Serializable object LibraryRoute
 @Serializable object SearchRoute
 @Serializable object FriendsRoute
 @Serializable object SettingsRoute
@@ -22,7 +22,7 @@ enum class BottomNavItem(
     val icon: ImageVector
 ) {
     PROFILE("Profilo", Icons.Default.Person),
-    CATALOG("Libreria", Icons.Default.Home),
+    LIBRARY("Libreria", Icons.Default.Home),
     SEARCH("Cerca", Icons.Default.Search),
     FRIENDS("Amici", Icons.Default.Face),
     SETTINGS("Opzioni", Icons.Default.Settings)

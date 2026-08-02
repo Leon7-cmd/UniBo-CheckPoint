@@ -1,4 +1,4 @@
-package com.example.checkpoint.ui.auth
+package com.example.checkpoint.ui.sections.auth
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*

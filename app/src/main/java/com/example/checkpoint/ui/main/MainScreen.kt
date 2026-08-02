@@ -7,12 +7,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.checkpoint.ui.sections.library.LibraryScreen
 import com.example.checkpoint.ui.navigation.*
+import com.example.checkpoint.ui.sections.library.LibraryViewModel
 
 @Composable
 fun MainScreen(
@@ -33,8 +36,8 @@ fun MainScreen(
                             restoreState = true
                         }
                     },
-                    Triple(BottomNavItem.CATALOG, CatalogRoute) {
-                        bottomNavController.navigate(CatalogRoute) {
+                    Triple(BottomNavItem.LIBRARY, LibraryRoute) {
+                        bottomNavController.navigate(LibraryRoute) {
                             popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
@@ -85,8 +88,16 @@ fun MainScreen(
             composable<ProfileRoute> {
                 PlaceholderScreen(title = "Schermata Profilo (XP, Level, Badge)")
             }
-            composable<CatalogRoute> {
-                PlaceholderScreen(title = "Schermata Libreria Giochi")
+            composable<LibraryRoute> {
+                val viewModel: LibraryViewModel = viewModel()
+                val uiState by viewModel.uiState.collectAsState()
+
+                LibraryScreen(
+                    uiState = uiState,
+                    onGameClick = { gameId ->
+                        //TODO: show game card
+                    }
+                )
             }
             composable<SearchRoute> {
                 PlaceholderScreen(title = "Schermata Ricerca Giochi (API RAWG/IGDB)")

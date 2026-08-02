@@ -5,9 +5,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.checkpoint.ui.auth.AuthScreen
-import com.example.checkpoint.ui.auth.AuthUiState
-import com.example.checkpoint.ui.auth.AuthViewModel
+import com.example.checkpoint.ui.sections.auth.AuthScreen
+import com.example.checkpoint.ui.sections.auth.AuthUiState
+import com.example.checkpoint.ui.sections.auth.AuthViewModel
 import com.example.checkpoint.ui.main.MainScreen
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.serialization.Serializable
