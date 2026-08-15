@@ -1,0 +1,148 @@
+package com.example.checkpoint.data.repository
+
+import com.example.checkpoint.BuildConfig
+import com.example.checkpoint.data.model.Achievement
+import com.example.checkpoint.data.model.AchievementSource
+import com.example.checkpoint.data.remote.retro.RetroAchievementDto
+import com.example.checkpoint.data.remote.retro.RetroAchievementsApiService
+import com.example.checkpoint.data.remote.retro.util.RetroConsoleMapper
+import com.example.checkpoint.data.remote.retro.util.sanitizeForMatching
+import com.example.checkpoint.data.remote.steam.SteamAchievementDto
+import com.example.checkpoint.data.remote.steam.SteamApiService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+class AchievementRepository(
+    private val steamApiService: SteamApiService,
+    private val retroApiService: RetroAchievementsApiService,
+    private val retroUsername: String = BuildConfig.RETRO_USERNAME.trim(),
+    private val retroApiKey: String = BuildConfig.RETRO_API_KEY.trim(),
+    private val steamApiKey: String = BuildConfig.STEAM_API_KEY.trim()
+) {
+
+    suspend fun getAchievements(
+        gameId: String,
+        gameTitle: String,
+        platforms: List<String>? = null,
+        steamAppId: String? = null,
+        retroGameId: String? = null
+    ): List<Achievement> = withContext(Dispatchers.Default) {
+
+        // 1. STEAM
+        if (!steamAppId.isNullOrEmpty()) {
+            val steamList = fetchSteamAchievements(gameId, steamAppId)
+            if (steamList.isNotEmpty()) return@withContext steamList
+        }
+
+        // 2. RETRO ACHIEVEMENTS (With game id)
+        if (!retroGameId.isNullOrEmpty()) {
+            val retroList = fetchRetroAchievements(gameId, retroGameId)
+            if (retroList.isNotEmpty()) return@withContext retroList
+        }
+
+        // 3. RETRO ACHIEVEMENTS (With game title)
+        if (gameTitle.isNotBlank()) {
+            val consoleIds = RetroConsoleMapper.getRetroConsoleIds(platforms)
+
+            for (consoleId in consoleIds) {
+                val foundRetroId = findRetroGameId(gameTitle, consoleId) ?: continue
+                val retroList = fetchRetroAchievements(gameId, foundRetroId)
+                if (retroList.isNotEmpty()) return@withContext retroList
+            }
+        }
+
+        // 4. SYSTEM FALLBACK
+        return@withContext createDefaultSystemAchievements(gameId)
+    }
+
+    private suspend fun findRetroGameId(igdbTitle: String, consoleId: Int): String? {
+        if (retroUsername.isBlank() || retroApiKey.isBlank()) return null
+
+        return runCatching {
+            val gameList = retroApiService.getGameListByConsole(retroUsername, retroApiKey, consoleId)
+            val cleanIgdbTitle = igdbTitle.sanitizeForMatching()
+
+            // Exact Match
+            var matched = gameList.firstOrNull {
+                it.title?.sanitizeForMatching() == cleanIgdbTitle
+            }
+
+            // Partial Match
+            if (matched == null) {
+                val sequelRegex = Regex("""^(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|2nd|3rd).*""", RegexOption.IGNORE_CASE)
+                matched = gameList.firstOrNull { game ->
+                    val cleanRetro = game.title?.sanitizeForMatching() ?: ""
+                    if (cleanRetro.startsWith(cleanIgdbTitle)) {
+                        val extra = cleanRetro.removePrefix(cleanIgdbTitle).trim()
+                        !extra.matches(sequelRegex)
+                    } else false
+                }
+            }
+
+            matched?.id?.toString()
+        }.getOrNull()
+    }
+
+    private suspend fun fetchSteamAchievements(gameId: String, steamAppId: String): List<Achievement> {
+        return runCatching {
+            val response = steamApiService.getSchemaForGame(apiKey = steamApiKey, appId = steamAppId)
+            response.game?.availableGameStats?.achievements
+                ?.take(700)
+                ?.mapIndexed { index, dto -> dto.toDomain(gameId, index) }
+                ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun fetchRetroAchievements(gameId: String, retroGameId: String): List<Achievement> =
+        withContext(Dispatchers.Default) {
+            runCatching {
+                val response = retroApiService.getGameExtended(retroUsername, retroApiKey, retroGameId)
+                response.achievements?.values
+                    ?.take(700)
+                    ?.map { it.toDomain(gameId) }
+                    ?: emptyList()
+            }.getOrDefault(emptyList())
+        }
+
+    private fun createDefaultSystemAchievements(gameId: String) = listOf(
+        Achievement(
+            id = "sys_${gameId}_started",
+            gameId = gameId,
+            title = "Gioco Iniziato",
+            description = "Spunta per spostare il gioco in 'In Corso'",
+            source = AchievementSource.SYSTEM_DEFAULT,
+            iconUrl = "",
+            isCompleted = false
+        ),
+        Achievement(
+            id = "sys_${gameId}_completed",
+            gameId = gameId,
+            title = "Gioco Completato",
+            description = "Spunta quando hai terminato la storia principale",
+            source = AchievementSource.SYSTEM_DEFAULT,
+            iconUrl = "",
+            isCompleted = false
+        )
+    )
+
+    // MAPPER FOR STEAM ACHIEVEMENTS AND RETRO ACHIEVEMENTS HELPERS
+    private fun SteamAchievementDto.toDomain(gameId: String, index: Int) = Achievement(
+        id = "steam_${gameId}_${name ?: index}",
+        gameId = gameId,
+        title = displayName ?: name ?: "Achievement #$index",
+        description = description ?: "Nessuna descrizione disponibile.",
+        iconUrl = icon ?: "",
+        source = AchievementSource.STEAM
+    )
+
+    private fun RetroAchievementDto.toDomain(gameId: String) = Achievement(
+        id = "retro_${gameId}_$id",
+        gameId = gameId,
+        title = title ?: "Obiettivo",
+        description = description ?: "",
+        iconUrl = badgeName?.let {
+            if (it.startsWith("http")) it else "https://media.retroachievements.org/Badge/$it.png"
+        } ?: "",
+        source = AchievementSource.RETRO_ACHIEVEMENTS
+    )
+}
