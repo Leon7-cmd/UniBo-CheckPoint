@@ -1,4 +1,4 @@
-package com.example.checkpoint.data
+package com.example.checkpoint
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,7 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.example.checkpoint.ui.navigation.AppNavigation
-import com.example.checkpoint.ui.theme.CheckPointTheme // Il nome del tuo tema
+import com.example.checkpoint.ui.theme.CheckPointTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

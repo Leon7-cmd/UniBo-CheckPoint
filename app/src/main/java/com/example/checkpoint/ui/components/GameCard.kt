@@ -72,7 +72,7 @@ fun GameCard(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = game.userRating.toString(),
+                            text = game.rating.toString(),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
                         )
