@@ -3,22 +3,15 @@ package com.example.checkpoint.ui.sections.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.checkpoint.BuildConfig
-import com.example.checkpoint.data.model.Game
 import com.example.checkpoint.data.remote.NetworkClient
 import com.example.checkpoint.data.repository.IgdbRepository
 import com.example.checkpoint.ui.sections.search.components.filter.FilterTag
 import com.example.checkpoint.ui.sections.search.components.filter.SearchFilterState
 import com.example.checkpoint.ui.sections.search.components.filter.SortOption
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-
-sealed interface SearchUiState {
-    data object Idle : SearchUiState
-    data object Loading : SearchUiState
-    data class Success(val games: List<Game>) : SearchUiState
-    data class Error(val message: String) : SearchUiState
-}
 
 class SearchViewModel(
     private val igdbRepository: IgdbRepository = IgdbRepository(
@@ -29,15 +22,15 @@ class SearchViewModel(
     )
 ) : ViewModel() {
 
-    // Text to search
+    // Query text state
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    // Filter status
+    // Filter criteria state
     private val _filterState = MutableStateFlow(SearchFilterState())
     val filterState: StateFlow<SearchFilterState> = _filterState.asStateFlow()
 
-    // Interface status
+    // UI result state
     private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Idle)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
@@ -45,58 +38,63 @@ class SearchViewModel(
         setupSearchPipeline()
     }
 
+    // Reactive search pipeline for query and filter changes
     @OptIn(FlowPreview::class)
     private fun setupSearchPipeline() {
         viewModelScope.launch {
-            // Apply debounce to the text field
-            _searchQuery
-                .map { it.trim() }
-                .debounce(350)
-                .distinctUntilChanged()
-                .collectLatest { cleanQuery ->
-                    if (cleanQuery.length >= 2 || _filterState.value.hasActiveFilters()) {
-                        performSearch(cleanQuery, _filterState.value)
-                    } else if (cleanQuery.isEmpty() && !_filterState.value.hasActiveFilters()) {
+            combine(
+                _searchQuery.map { it.trim() }.debounce(350).distinctUntilChanged(),
+                _filterState
+            ) { query, filters ->
+                Pair(query, filters)
+            }
+                .flowOn(Dispatchers.Default)
+                .collectLatest { (cleanQuery, filters) ->
+                    if (cleanQuery.length >= 2 || filters.hasActiveFilters()) {
+                        performSearch(cleanQuery, filters)
+                    } else {
                         _uiState.value = SearchUiState.Idle
                     }
                 }
         }
     }
 
-    // Explicit search trigger
+    // Manual search trigger
     fun performExplicitSearch() {
         viewModelScope.launch {
             val query = _searchQuery.value.trim()
-            if (query.length >= 2 || _filterState.value.hasActiveFilters()) {
-                performSearch(query, _filterState.value)
+            val filters = _filterState.value
+            if (query.length >= 2 || filters.hasActiveFilters()) {
+                performSearch(query, filters)
             }
         }
     }
 
-    // Text field update
     fun onQueryChange(newQuery: String) {
         _searchQuery.value = newQuery
     }
 
-    // Action update
     fun toggleConsole(tag: FilterTag) {
         _filterState.update { it.copy(selectedConsoles = it.selectedConsoles.toggle(tag)) }
     }
+
     fun toggleGenre(tag: FilterTag) {
         _filterState.update { it.copy(selectedGenres = it.selectedGenres.toggle(tag)) }
     }
+
     fun toggleGameplay(tag: FilterTag) {
         _filterState.update { it.copy(selectedGameplay = it.selectedGameplay.toggle(tag)) }
     }
+
     fun onSortSelected(sortOption: SortOption) {
         _filterState.update { it.copy(sortBy = sortOption) }
     }
+
     fun resetFilters() {
         _filterState.value = SearchFilterState()
-        performExplicitSearch()
     }
 
-    // Call the repository to perform the search
+    // Execute search request via repository
     private suspend fun performSearch(query: String, filters: SearchFilterState) {
         _uiState.value = SearchUiState.Loading
 
@@ -111,7 +109,6 @@ class SearchViewModel(
             }
     }
 
-    // Private utility function to toggle a tag in a set
     private fun <T> Set<T>.toggle(item: T): Set<T> =
         if (contains(item)) this - item else this + item
 }

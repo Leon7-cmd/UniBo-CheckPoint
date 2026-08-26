@@ -1,95 +1,119 @@
 package com.example.checkpoint.ui.sections.auth
 
+import android.util.Patterns
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.checkpoint.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseAuthException
-import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
-import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.userProfileChangeRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-class AuthViewModel : ViewModel() {
-
+class AuthViewModel(
+    private val userProfileRepository: UserProfileRepository,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    // Sign in with email and password
     fun login(email: String, pass: String) {
-        if (email.isBlank() || pass.isBlank()) {
-            _uiState.value = AuthUiState.Error("Compila tutti i campi")
+        val cleanEmail = email.trim()
+
+        if (cleanEmail.isBlank() || pass.isBlank()) {
+            _uiState.update { AuthUiState.Error("Compila tutti i campi.") }
+            return
+        }
+
+        if (!Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+            _uiState.update { AuthUiState.Error("Inserisci un indirizzo email valido.") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = AuthUiState.Loading
+            _uiState.update { AuthUiState.Loading }
             try {
-                val result = auth.signInWithEmailAndPassword(email.trim(), pass).await()
-                val uid = result.user?.uid ?: ""
-                _uiState.value = AuthUiState.LoginSuccess(userId = uid)
+                val result = auth.signInWithEmailAndPassword(cleanEmail, pass).await()
+                val uid = result.user?.uid.orEmpty()
+                _uiState.update { AuthUiState.LoginSuccess(userId = uid) }
             } catch (e: Exception) {
-                _uiState.value = AuthUiState.Error(mapFirebaseError(e))
+                _uiState.update { AuthUiState.Error(FirebaseAuthErrors.parse(e)) }
             }
         }
     }
 
+    // Register a new user account with profile initialization
     fun register(username: String, email: String, pass: String, confirmPass: String) {
-        if (username.isBlank() || email.isBlank() || pass.isBlank()) {
-            _uiState.value = AuthUiState.Error("Tutti i campi sono obbligatori")
+        val cleanUsername = username.trim()
+        val cleanEmail = email.trim()
+
+        if (cleanUsername.isBlank() || cleanEmail.isBlank() || pass.isBlank() || confirmPass.isBlank()) {
+            _uiState.update { AuthUiState.Error("Tutti i campi sono obbligatori.") }
             return
         }
-        if (pass != confirmPass) {
-            _uiState.value = AuthUiState.Error("Le password non coincidono")
+        if (cleanUsername.length < 3) {
+            _uiState.update { AuthUiState.Error("Il nome utente deve contenere almeno 3 caratteri.") }
+            return
+        }
+        if (!Patterns.EMAIL_ADDRESS.matcher(cleanEmail).matches()) {
+            _uiState.update { AuthUiState.Error("Inserisci un formato email valido.") }
             return
         }
         if (pass.length < 6) {
-            _uiState.value = AuthUiState.Error("La password deve avere almeno 6 caratteri")
+            _uiState.update { AuthUiState.Error("La password deve avere almeno 6 caratteri.") }
+            return
+        }
+        if (pass != confirmPass) {
+            _uiState.update { AuthUiState.Error("Le due password non coincidono.") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = AuthUiState.Loading
+            _uiState.update { AuthUiState.Loading }
             try {
-                val result = auth.createUserWithEmailAndPassword(email.trim(), pass).await()
-                val uid = result.user?.uid ?: ""
+                // 1. Create Firebase Auth user
+                val result = auth.createUserWithEmailAndPassword(cleanEmail, pass).await()
+                val user = result.user ?: throw IllegalStateException("Creazione utente fallita.")
 
-                // TODO: Salvare lo username e il Friend Code su Firestore
-                _uiState.value = AuthUiState.RegisterSuccess("Registrazione avvenuta con successo")
+                // 2. Initialize Firestore profile and local cache
+                userProfileRepository.createInitialUserProfile(
+                    uid = user.uid,
+                    email = cleanEmail,
+                    username = cleanUsername
+                )
+
+                // 3. Set display name in Firebase Auth user profile
+                val profileUpdates = userProfileChangeRequest {
+                    displayName = cleanUsername
+                }
+                user.updateProfile(profileUpdates).await()
+
+                _uiState.update { AuthUiState.RegisterSuccess("Registrazione completata con successo!") }
             } catch (e: Exception) {
-                _uiState.value = AuthUiState.Error(mapFirebaseError(e))
+                _uiState.update { AuthUiState.Error(FirebaseAuthErrors.parse(e)) }
             }
         }
     }
 
     fun resetState() {
-        _uiState.value = AuthUiState.Idle
+        _uiState.update { AuthUiState.Idle }
     }
 
-    // Function to translate Firebase exceptions
-    private fun mapFirebaseError(e: Exception): String {
-        return when (e) {
-            is FirebaseAuthUserCollisionException ->
-                "Questa email è già registrata. Prova ad accedere."
-            is FirebaseAuthInvalidCredentialsException ->
-                "Email o password errate. Riprova."
-            is FirebaseAuthException -> {
-                when (e.errorCode) {
-                    "ERROR_INVALID_EMAIL" -> "Formato email non valido."
-                    "ERROR_USER_NOT_FOUND" -> "Nessun account trovato con questa email."
-                    "ERROR_WRONG_PASSWORD" -> "Password errata."
-                    "ERROR_WEAK_PASSWORD" -> "La password è troppo debole."
-                    "ERROR_EMAIL_ALREADY_IN_USE" -> "Email già registrata."
-                    "ERROR_USER_DISABLED" -> "Questo account è stato disabilitato."
-                    "ERROR_TOO_MANY_REQUESTS" -> "Troppi tentativi falliti. Riprova più tardi."
-                    "ERROR_NETWORK_REQUEST_FAILED" -> "Connessione internet assente o instabile."
-                    else -> "Si è verificato un errore. Riprova."
-                }
+    class Factory(
+        private val userProfileRepository: UserProfileRepository
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
+                return AuthViewModel(userProfileRepository) as T
             }
-            else -> "Impossibile completare l'operazione. Controlla la connessione."
+            throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
     }
 }

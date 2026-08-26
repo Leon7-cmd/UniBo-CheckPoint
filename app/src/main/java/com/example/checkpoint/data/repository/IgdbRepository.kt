@@ -2,11 +2,13 @@ package com.example.checkpoint.data.repository
 
 import android.util.Log
 import com.example.checkpoint.data.model.Game
-import com.example.checkpoint.ui.sections.search.components.filter.SearchFilterState
-import com.example.checkpoint.ui.sections.search.components.filter.SortOption
 import com.example.checkpoint.data.remote.igdb.IgdbApiService
 import com.example.checkpoint.data.remote.igdb.IgdbGameDto
 import com.example.checkpoint.data.remote.igdb.TwitchAuthApiService
+import com.example.checkpoint.ui.sections.search.components.filter.SearchFilterState
+import com.example.checkpoint.ui.sections.search.components.filter.SortOption
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
@@ -14,6 +16,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Repository responsible for querying Twitch OAuth and IGDB game catalog API.
+ */
 class IgdbRepository(
     private val authApiService: TwitchAuthApiService,
     private val igdbApiService: IgdbApiService,
@@ -21,22 +26,29 @@ class IgdbRepository(
     private val clientSecret: String
 ) {
     private var accessToken: String? = null
+    private val authMutex = Mutex()
 
-    private suspend fun getOrFetchToken(): String {
-        if (accessToken == null) {
-            runCatching {
-                authApiService.getAccessToken(clientId, clientSecret).accessToken
-            }.onSuccess { accessToken = it }
-                .onFailure { error ->
+    // Thread-safe Twitch OAuth token retrieval
+    private suspend fun getOrFetchToken(forceRefresh: Boolean = false): String {
+        return authMutex.withLock {
+            if (forceRefresh || accessToken == null) {
+                runCatching {
+                    authApiService.getAccessToken(clientId, clientSecret).accessToken
+                }.onSuccess {
+                    accessToken = it
+                }.onFailure { error ->
                     if (error is HttpException) {
-                        Log.e("IGDB_ERROR", "Errore Auth Twitch (${error.code()}): ${error.response()?.errorBody()?.string()}")
+                        Log.e(TAG, "Twitch Auth Error (${error.code()}): ${error.response()?.errorBody()?.string()}")
                     }
                     throw error
-                }
+                }.getOrThrow()
+            } else {
+                accessToken!!
+            }
         }
-        return accessToken!!
     }
 
+    // Search games catalog with multi-field filters and automatic 401 retry
     suspend fun searchGames(
         queryText: String,
         filters: SearchFilterState = SearchFilterState()
@@ -46,40 +58,58 @@ class IgdbRepository(
         }
 
         return runCatching {
-            val token = getOrFetchToken()
-            val queryRaw = buildIgdbQuery(queryText, filters)
-
-            val results = igdbApiService.getGames(
-                clientId = clientId,
-                authorization = "Bearer $token",
-                query = queryRaw.toRequestBody("text/plain".toMediaType())
-            )
-            results.map { it.toSearchGameDomain() }
+            executeWithRetry { token ->
+                val queryRaw = buildIgdbQuery(queryText, filters)
+                igdbApiService.getGames(
+                    clientId = clientId,
+                    authorization = "Bearer $token",
+                    query = queryRaw.toRequestBody(MEDIA_TYPE_TEXT)
+                ).map { it.toSearchGameDomain() }
+            }
         }.onFailure { error ->
-            Log.e("IGDB_ERROR", "Errore in searchGames: ${error.message}")
+            Log.e(TAG, "Error in searchGames: ${error.message}")
         }
     }
 
+    // Fetch comprehensive details for a single game
     suspend fun getGameById(gameId: String): Result<Game> {
         return runCatching {
-            val token = getOrFetchToken()
-            val queryRaw = """
-                where id = $gameId; 
-                fields name, summary, storyline, cover.image_id, platforms.name, 
-                       genres.name, themes.name, first_release_date, 
-                       involved_companies.developer, involved_companies.publisher, involved_companies.company.name,
-                       external_games.category, external_games.uid, external_games.url; 
-                limit 1;
-            """.trimIndent()
+            executeWithRetry { token ->
+                val queryRaw = """
+                    where id = $gameId; 
+                    fields name, summary, storyline, cover.image_id, platforms.name, platforms.abbreviation, 
+                           genres.name, themes.name, first_release_date, 
+                           involved_companies.developer, involved_companies.publisher, involved_companies.company.name,
+                           external_games.category, external_games.uid, external_games.url; 
+                    limit 1;
+                """.trimIndent()
 
-            val results = igdbApiService.getGames(
-                clientId = clientId,
-                authorization = "Bearer $token",
-                query = queryRaw.toRequestBody("text/plain".toMediaType())
-            )
-            results.first().toDetailGameDomain()
+                val results = igdbApiService.getGames(
+                    clientId = clientId,
+                    authorization = "Bearer $token",
+                    query = queryRaw.toRequestBody(MEDIA_TYPE_TEXT)
+                )
+
+                val gameDto = results.firstOrNull() ?: throw NoSuchElementException("No game found for ID: $gameId")
+                gameDto.toDetailGameDomain()
+            }
         }.onFailure { error ->
-            Log.e("IGDB_ERROR", "Errore in getGameById($gameId): ${error.message}")
+            Log.e(TAG, "Error in getGameById($gameId): ${error.message}")
+        }
+    }
+
+    // Execute API block with automatic retry upon token expiration (HTTP 401)
+    private suspend fun <T> executeWithRetry(block: suspend (token: String) -> T): T {
+        val currentToken = getOrFetchToken()
+        return try {
+            block(currentToken)
+        } catch (e: HttpException) {
+            if (e.code() == 401) {
+                val refreshedToken = getOrFetchToken(forceRefresh = true)
+                block(refreshedToken)
+            } else {
+                throw e
+            }
         }
     }
 
@@ -97,23 +127,27 @@ class IgdbRepository(
             whereConditions.add("(${filters.selectedGameplay.joinToString(" | ") { "(themes.name = \"${it.igdbValue}\" | game_modes.name = \"${it.igdbValue}\")" }})")
         }
 
-        val whereClause = if (whereConditions.isNotEmpty()) "where " + whereConditions.joinToString(" & ") + ";" else ""
-        val sortClause = when (filters.sortBy) {
-            SortOption.NAME_ASC -> "sort name asc;"
-            SortOption.RATING_DESC -> "sort rating desc;"
-            SortOption.RELEASE_DATE -> "sort first_release_date desc;"
+        val whereClause = if (whereConditions.isNotEmpty()) {
+            "where " + whereConditions.joinToString(" & ") + ";"
+        } else {
+            ""
         }
 
         return if (cleanQuery.isNotBlank()) {
             """
                 search "$cleanQuery";
-                fields name, cover.image_id, platforms.name, first_release_date;
+                fields name, cover.image_id, platforms.name, platforms.abbreviation, first_release_date;
                 $whereClause
                 limit 40;
             """.trimIndent()
         } else {
+            val sortClause = when (filters.sortBy) {
+                SortOption.NAME_ASC -> "sort name asc;"
+                SortOption.RATING_DESC -> "sort rating desc;"
+                SortOption.RELEASE_DATE -> "sort first_release_date desc;"
+            }
             """
-                fields name, cover.image_id, platforms.name, first_release_date;
+                fields name, cover.image_id, platforms.name, platforms.abbreviation, first_release_date;
                 $whereClause
                 $sortClause
                 limit 40;
@@ -121,23 +155,39 @@ class IgdbRepository(
         }
     }
 
-    // MAPPER FOR IGDB GAMES HELPERS
-    private fun IgdbGameDto.toSearchGameDomain() = Game(
-        id = id.toString(),
-        title = name ?: "Titolo non disponibile",
-        coverUrl = cover?.imageId?.let { "https://images.igdb.com/igdb/image/upload/t_cover_big/$it.jpg" } ?: "",
-        releaseDate = firstReleaseDate?.let { SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(it * 1000L)) } ?: "",
-        platforms = platforms?.mapNotNull { it.name } ?: emptyList()
-    )
+    // --- MAPPERS ---
+
+    private fun IgdbGameDto.toSearchGameDomain(): Game {
+        val extractedPlatforms = platforms?.mapNotNull {
+            it.abbreviation?.ifBlank { null } ?: it.name?.ifBlank { null }
+        } ?: emptyList()
+
+        return Game(
+            id = id.toString(),
+            title = name ?: "Titolo non disponibile",
+            coverUrl = cover?.imageId?.let { "$COVER_BASE_URL$it.jpg" } ?: "",
+            releaseDate = formatYear(firstReleaseDate),
+            platforms = extractedPlatforms
+        )
+    }
 
     private fun IgdbGameDto.toDetailGameDomain(): Game {
-        val coverUrl = cover?.imageId?.let { "https://images.igdb.com/igdb/image/upload/t_cover_big/$it.jpg" } ?: ""
-        val releaseDateFormatted = firstReleaseDate?.let { SimpleDateFormat("dd MMMM yyyy", Locale.getDefault()).format(Date(it * 1000L)) } ?: ""
+        val coverUrl = cover?.imageId?.let { "$COVER_BASE_URL$it.jpg" } ?: ""
+        val releaseDateFormatted = formatFullDate(firstReleaseDate)
 
-        val developers = involvedCompanies?.filter { it.developer }?.mapNotNull { it.company?.name }?.joinToString(", ") ?: ""
-        val publishers = involvedCompanies?.filter { it.publisher }?.mapNotNull { it.company?.name }?.joinToString(", ") ?: ""
+        val developers = involvedCompanies
+            ?.filter { it.developer }
+            ?.mapNotNull { it.company?.name }
+            ?.joinToString(", ")
+            .orEmpty()
 
-        val extractedTags = mutableListOf<String>().apply {
+        val publishers = involvedCompanies
+            ?.filter { it.publisher }
+            ?.mapNotNull { it.company?.name }
+            ?.joinToString(", ")
+            .orEmpty()
+
+        val extractedTags = buildList {
             genres?.mapNotNull { it.name }?.let { addAll(it) }
             themes?.mapNotNull { it.name }?.let { addAll(it) }
         }
@@ -151,11 +201,15 @@ class IgdbRepository(
         val extractedSteamAppId = externalGames?.firstNotNullOfOrNull { extGame ->
             when {
                 extGame.category == 1 && !extGame.uid.isNullOrBlank() -> extGame.uid
-                extGame.url?.contains("steampowered.com/app/") == true -> Regex("""app/(\d+)""").find(extGame.url)?.groupValues?.get(1)
-                extGame.uid?.contains("steampowered.com/app/") == true -> Regex("""app/(\d+)""").find(extGame.uid)?.groupValues?.get(1)
+                extGame.url?.contains("steampowered.com/app/") == true -> STEAM_APP_ID_REGEX.find(extGame.url)?.groupValues?.get(1)
+                extGame.uid?.contains("steampowered.com/app/") == true -> STEAM_APP_ID_REGEX.find(extGame.uid)?.groupValues?.get(1)
                 else -> null
             }
         }
+
+        val extractedPlatforms = platforms?.mapNotNull {
+            it.abbreviation?.ifBlank { null } ?: it.name?.ifBlank { null }
+        } ?: emptyList()
 
         return Game(
             id = id.toString(),
@@ -165,9 +219,26 @@ class IgdbRepository(
             releaseDate = releaseDateFormatted,
             developer = developers,
             publisher = publishers,
-            platforms = platforms?.mapNotNull { it.name } ?: emptyList(),
+            platforms = extractedPlatforms,
             tags = extractedTags,
             steamAppId = extractedSteamAppId
         )
+    }
+
+    companion object {
+        private const val TAG = "IGDB_REPOSITORY"
+        private const val COVER_BASE_URL = "https://images.igdb.com/igdb/image/upload/t_cover_big/"
+        private val MEDIA_TYPE_TEXT = "text/plain".toMediaType()
+        private val STEAM_APP_ID_REGEX = Regex("""app/(\d+)""")
+
+        private fun formatYear(timestampSeconds: Long?): String {
+            if (timestampSeconds == null) return ""
+            return SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(timestampSeconds * 1000L))
+        }
+
+        private fun formatFullDate(timestampSeconds: Long?): String {
+            if (timestampSeconds == null) return ""
+            return SimpleDateFormat("dd MMMM yyyy", Locale.getDefault()).format(Date(timestampSeconds * 1000L))
+        }
     }
 }

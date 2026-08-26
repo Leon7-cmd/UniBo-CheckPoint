@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalLayoutApi::class)
-
 package com.example.checkpoint.ui.sections.detail
 
 import androidx.compose.foundation.layout.*
@@ -12,21 +10,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.checkpoint.data.model.Achievement
 import com.example.checkpoint.data.model.Game
-import com.example.checkpoint.ui.sections.detail.components.bottomSection.achievement.AchievementsTabContent
+import com.example.checkpoint.data.model.Review
 import com.example.checkpoint.ui.sections.detail.components.bottomSection.DetailsTabContent
-import com.example.checkpoint.ui.sections.detail.components.bottomSection.ReviewsTabContent
+import com.example.checkpoint.ui.sections.detail.components.bottomSection.achievement.AchievementsTabContent
+import com.example.checkpoint.ui.sections.detail.components.bottomSection.review.ReviewsTabContent
 import com.example.checkpoint.ui.sections.detail.components.upperSection.DetailHeaderBanner
 import com.example.checkpoint.ui.sections.detail.components.upperSection.DetailInfoSection
 
+/**
+ * Available tabs within the Game Detail screen.
+ */
+@Immutable
+enum class DetailTab(val title: String) {
+    DETAILS("DETTAGLI"),
+    ACHIEVEMENTS("ACHIEVEMENTS"),
+    REVIEWS("RECENSIONI")
+}
+
+/**
+ * Comprehensive game detail screen showcasing media banner, metadata, tabs for info, achievements, and reviews.
+ */
 @Composable
 fun GameDetailScreen(
     game: Game,
     achievements: List<Achievement>,
+    communityReviews: List<Review>,
+    averageRating: Float?,
+    totalReviewsCount: Int,
     isLoadingAchievements: Boolean,
+    isLoadingCommunityReviews: Boolean,
     onBackClick: () -> Unit,
     onFavoriteToggle: () -> Unit,
     onToPlayToggle: () -> Unit,
-    onRatingChange: (Float) -> Unit,
+    onSaveReview: (rating: Float, reviewText: String) -> Unit,
+    onDeleteReview: () -> Unit,
     onToggleAchievement: (String) -> Unit,
     modifier: Modifier = Modifier,
     isUserLoggedInToPlatform: Boolean = false,
@@ -40,8 +57,8 @@ fun GameDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 1. Top Banner + Background image
-            item {
+            // Header banner with game cover and back navigation
+            item(key = "detail_banner", contentType = "header_banner") {
                 DetailHeaderBanner(
                     coverUrl = game.coverUrl,
                     title = game.title,
@@ -49,19 +66,23 @@ fun GameDetailScreen(
                 )
             }
 
-            // 2. Title, rating and info
-            item {
+            // Game metadata, rating, favorite and backlog toggles
+            item(key = "detail_info", contentType = "header_info") {
                 DetailInfoSection(
                     game = game,
+                    averageRating = averageRating,
+                    totalReviewsCount = totalReviewsCount,
                     onFavoriteToggle = onFavoriteToggle,
-                    onToPlayToggle = onToPlayToggle,
-                    onRatingChange = onRatingChange
+                    onToPlayToggle = onToPlayToggle
                 )
             }
 
-            // 3. Tab Selection
-            item {
-                TabRow(selectedTabIndex = selectedTab.ordinal) {
+            // Tab navigation selector
+            item(key = "detail_tabs", contentType = "tabs_row") {
+                TabRow(
+                    selectedTabIndex = selectedTab.ordinal,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     DetailTab.entries.forEach { tab ->
                         Tab(
                             selected = selectedTab == tab,
@@ -73,16 +94,20 @@ fun GameDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // 4. Active Tab Content
-            item {
+            // Dynamic tab content section
+            item(key = "tab_content_${selectedTab.name}", contentType = "tab_content") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     when (selectedTab) {
-                        DetailTab.DETAILS -> DetailsTabContent(game = game)
+                        DetailTab.DETAILS -> {
+                            DetailsTabContent(game = game)
+                        }
+
                         DetailTab.ACHIEVEMENTS -> {
                             if (isLoadingAchievements) {
                                 CircularProgressIndicator(modifier = Modifier.padding(32.dp))
@@ -96,7 +121,15 @@ fun GameDetailScreen(
                             }
                         }
 
-                        DetailTab.REVIEWS -> ReviewsTabContent(game = game)
+                        DetailTab.REVIEWS -> {
+                            ReviewsTabContent(
+                                game = game,
+                                communityReviews = communityReviews,
+                                isLoadingCommunityReviews = isLoadingCommunityReviews,
+                                onSaveReview = onSaveReview,
+                                onDeleteReview = onDeleteReview
+                            )
+                        }
                     }
                 }
             }

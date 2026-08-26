@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example.checkpoint.ui.sections.search.components.filter
 
 import androidx.compose.foundation.layout.*
@@ -11,6 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * Filter and sorting panel for refining IGDB search queries.
+ */
 @Composable
 fun SearchFilterPanel(
     filterState: SearchFilterState,
@@ -28,7 +33,7 @@ fun SearchFilterPanel(
             .heightIn(max = 380.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Title and Reset Button
+        // Header with title and reset action
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -49,7 +54,7 @@ fun SearchFilterPanel(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 1. CONSOLE
+        // Platform filters
         ExpandableFilterSection(
             title = "Console",
             tags = IgdbFilterTags.CONSOLES,
@@ -57,7 +62,7 @@ fun SearchFilterPanel(
             onTagToggle = onConsoleToggle
         )
 
-        // 2. GENRE
+        // Genre filters
         ExpandableFilterSection(
             title = "Genere",
             tags = IgdbFilterTags.GENRES,
@@ -65,7 +70,7 @@ fun SearchFilterPanel(
             onTagToggle = onGenreToggle
         )
 
-        // 3. GAMEPLAY & THEMATIC
+        // Gameplay and thematic filters
         ExpandableFilterSection(
             title = "Gameplay & Tematiche",
             tags = IgdbFilterTags.GAMEPLAY_AND_THEMES,
@@ -73,32 +78,32 @@ fun SearchFilterPanel(
             onTagToggle = onGameplayToggle
         )
 
-        // 4. ORDER
+        // Sort criteria
         Text(
             text = "Ordina per",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(vertical = 4.dp)
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(bottom = 12.dp)
+
+        CompositionLocalProvider(
+            LocalMinimumInteractiveComponentSize provides 0.dp
         ) {
-            SortOption.entries.forEach { option ->
-                val label = when (option) {
-                    SortOption.NAME_ASC -> "Nome (A-Z)"
-                    SortOption.RATING_DESC -> "Voto"
-                    SortOption.RELEASE_DATE -> "Data Uscita"
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                SortOption.entries.forEach { option ->
+                    FilterChip(
+                        selected = filterState.sortBy == option,
+                        onClick = { onSortSelected(option) },
+                        label = { Text(option.displayLabel(), style = MaterialTheme.typography.labelSmall) }
+                    )
                 }
-                FilterChip(
-                    selected = filterState.sortBy == option,
-                    onClick = { onSortSelected(option) },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
-                )
             }
         }
 
-        // Apply and Search Button
+        // Apply filters action button
         Button(
             onClick = onApplySearch,
             modifier = Modifier.fillMaxWidth()
@@ -114,7 +119,9 @@ fun SearchFilterPanel(
     }
 }
 
-// Reusable component for expandable filter sections
+/**
+ * Expandable tag flow section showing initial preview tags with a show all/less toggle.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExpandableFilterSection(
@@ -134,25 +141,30 @@ private fun ExpandableFilterSection(
         modifier = Modifier.padding(vertical = 4.dp)
     )
 
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    // Remove minimum touch target padding for uniform 6.dp spacing
+    CompositionLocalProvider(
+        LocalMinimumInteractiveComponentSize provides 0.dp
     ) {
-        visibleTags.forEach { tag ->
-            FilterChip(
-                selected = selectedTags.contains(tag),
-                onClick = { onTagToggle(tag) },
-                label = { Text(tag.label, style = MaterialTheme.typography.labelSmall) }
-            )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            visibleTags.forEach { tag ->
+                FilterChip(
+                    selected = selectedTags.contains(tag),
+                    onClick = { onTagToggle(tag) },
+                    label = { Text(tag.label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
         }
     }
 
     if (tags.size > initialCount) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            TextButton(
-                onClick = { isExpanded = !isExpanded },
-                modifier = Modifier.align(Alignment.CenterEnd)
-            ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(onClick = { isExpanded = !isExpanded }) {
                 Text(
                     text = if (isExpanded) "Meno" else "Tutti (${tags.size})",
                     style = MaterialTheme.typography.labelSmall
@@ -162,4 +174,10 @@ private fun ExpandableFilterSection(
     }
 
     Spacer(modifier = Modifier.height(4.dp))
+}
+
+private fun SortOption.displayLabel(): String = when (this) {
+    SortOption.NAME_ASC -> "Nome (A-Z)"
+    SortOption.RATING_DESC -> "Voto"
+    SortOption.RELEASE_DATE -> "Data Uscita"
 }

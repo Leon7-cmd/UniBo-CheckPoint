@@ -1,16 +1,24 @@
 package com.example.checkpoint.data.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
+/**
+ * Progression and library categorization status for a game.
+ */
+@Immutable
+@Serializable
 enum class GameStatus(val label: String) {
-    NONE(""),
-    FAVORITES("PREFERITI ♡"),
-    COMPLETED("COMPLETATI ★"),
+    NONE("Nessuno"),
+    TO_PLAY("DA GIOCARE"),
     NOT_COMPLETED("NON-COMPLETATI"),
-    TO_PLAY("DA GIOCARE")
+    COMPLETED("COMPLETATI ★")
 }
 
-// Class used to map the structure of a game
+/**
+ * Core domain model representing a video game, its metadata, user library state, and ratings.
+ */
+@Immutable
 @Serializable
 data class Game(
     val id: String,
@@ -18,23 +26,16 @@ data class Game(
     val coverUrl: String = "",
     val releaseDate: String = "",
     val description: String = "",
-
-    // Platform and Tags
     val platforms: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
-
-    // Info Development
     val developer: String = "",
     val publisher: String = "",
-
-    // ID External Services
     val steamAppId: String? = null,
     val retroGameId: String? = null,
-
-    // State ed User Experience (Locale)
     val status: GameStatus = GameStatus.NONE,
     val isFavorite: Boolean = false,
     val rating: Float = 0f,
+    val communityRating: Float? = null,
     val userReview: String = "",
     val note: String = ""
 )

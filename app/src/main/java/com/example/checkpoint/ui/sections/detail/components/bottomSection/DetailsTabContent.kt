@@ -1,15 +1,18 @@
-@file:OptIn(ExperimentalLayoutApi::class)
-
 package com.example.checkpoint.ui.sections.detail.components.bottomSection
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.checkpoint.data.model.Game
 
+/**
+ * Tab content displaying game genres/tags flow chips and the full summary description.
+ */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsTabContent(
     game: Game,
@@ -20,7 +23,7 @@ fun DetailsTabContent(
             .fillMaxWidth()
             .padding(bottom = 24.dp)
     ) {
-        // 1. Tag section
+        // Genres and tags section
         if (game.tags.isNotEmpty()) {
             Text(
                 text = "Generi & Tag",
@@ -30,28 +33,33 @@ fun DetailsTabContent(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+            // Override minimum interactive size constraint for uniform FlowRow spacing
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides 0.dp
             ) {
-                for (tag in game.tags) {
-                    AssistChip(
-                        onClick = { },
-                        label = {
-                            Text(
-                                text = tag,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    game.tags.forEach { tag ->
+                        AssistChip(
+                            onClick = { },
+                            label = {
+                                Text(
+                                    text = tag,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // 2. Description section
+        // Full description section
         Text(
             text = "Descrizione",
             style = MaterialTheme.typography.titleMedium,

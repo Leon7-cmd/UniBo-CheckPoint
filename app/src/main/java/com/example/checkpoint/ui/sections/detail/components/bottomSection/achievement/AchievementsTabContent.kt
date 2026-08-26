@@ -10,20 +10,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.checkpoint.data.model.Achievement
 
+/**
+ * Tab content displaying achievement sync status banner, overall progress bar, and list of trophies.
+ */
 @Composable
 fun AchievementsTabContent(
     achievements: List<Achievement>,
     isUserLoggedInToPlatform: Boolean,
     onConnectPlatformClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onToggleAchievement: (String) -> Unit
+    onToggleAchievement: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(bottom = 24.dp)
     ) {
-        // Banner for connecting platform
+        // Platform synchronization banner
         if (!isUserLoggedInToPlatform) {
             Card(
                 colors = CardDefaults.cardColors(
@@ -59,34 +62,35 @@ fun AchievementsTabContent(
                 modifier = Modifier.padding(vertical = 16.dp)
             )
         } else {
-            // Achievement counter
+            val totalCount = achievements.size
             val completedCount = remember(achievements) { achievements.count { it.isCompleted } }
-            val progress = remember(achievements) {
-                if (achievements.isNotEmpty()) completedCount.toFloat() / achievements.size else 0f
+            val progress = remember(completedCount, totalCount) {
+                completedCount.toFloat() / totalCount
             }
+            val progressPercentage = remember(progress) { (progress * 100).toInt() }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Progress stats header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Trofei ottenuti: $completedCount / ${achievements.size}",
+                        text = "Trofei ottenuti: $completedCount / $totalCount",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "${(progress * 100).toInt()}%",
+                        text = "$progressPercentage%",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
                 Spacer(modifier = Modifier.height(6.dp))
+
+                // Progress bar
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier
@@ -96,17 +100,22 @@ fun AchievementsTabContent(
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     color = MaterialTheme.colorScheme.primary
                 )
-            }
 
-            // Achievement list
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                achievements.forEach { achievement ->
-                    key(achievement.id) {
-                        AchievementItemRow(
-                            achievement = achievement,
-                            isReadOnly = isUserLoggedInToPlatform,
-                            onToggle = { onToggleAchievement(achievement.id) }
-                        )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Trophy list items
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    achievements.forEach { achievement ->
+                        key(achievement.id) {
+                            AchievementItemRow(
+                                achievement = achievement,
+                                isReadOnly = isUserLoggedInToPlatform,
+                                onToggle = { onToggleAchievement(achievement.id) }
+                            )
+                        }
                     }
                 }
             }

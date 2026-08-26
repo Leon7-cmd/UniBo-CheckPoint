@@ -12,6 +12,9 @@ import com.example.checkpoint.data.remote.steam.SteamApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * Repository responsible for aggregating achievements from Steam, RetroAchievements, or generating system fallbacks.
+ */
 class AchievementRepository(
     private val steamApiService: SteamApiService,
     private val retroApiService: RetroAchievementsApiService,
@@ -20,27 +23,28 @@ class AchievementRepository(
     private val steamApiKey: String = BuildConfig.STEAM_API_KEY.trim()
 ) {
 
+    // Retrieve achievements querying Steam first, then RetroAchievements, falling back to system defaults
     suspend fun getAchievements(
         gameId: String,
         gameTitle: String,
         platforms: List<String>? = null,
         steamAppId: String? = null,
         retroGameId: String? = null
-    ): List<Achievement> = withContext(Dispatchers.Default) {
+    ): List<Achievement> = withContext(Dispatchers.IO) {
 
-        // 1. STEAM
+        // 1. Steam integration
         if (!steamAppId.isNullOrEmpty()) {
             val steamList = fetchSteamAchievements(gameId, steamAppId)
             if (steamList.isNotEmpty()) return@withContext steamList
         }
 
-        // 2. RETRO ACHIEVEMENTS (With game id)
+        // 2. RetroAchievements by direct Game ID
         if (!retroGameId.isNullOrEmpty()) {
             val retroList = fetchRetroAchievements(gameId, retroGameId)
             if (retroList.isNotEmpty()) return@withContext retroList
         }
 
-        // 3. RETRO ACHIEVEMENTS (With game title)
+        // 3. RetroAchievements resolution by Title and Platform matching
         if (gameTitle.isNotBlank()) {
             val consoleIds = RetroConsoleMapper.getRetroConsoleIds(platforms)
 
@@ -51,8 +55,8 @@ class AchievementRepository(
             }
         }
 
-        // 4. SYSTEM FALLBACK
-        return@withContext createDefaultSystemAchievements(gameId)
+        // 4. Fallback system achievements
+        createDefaultSystemAchievements(gameId)
     }
 
     private suspend fun findRetroGameId(igdbTitle: String, consoleId: Int): String? {
@@ -62,20 +66,21 @@ class AchievementRepository(
             val gameList = retroApiService.getGameListByConsole(retroUsername, retroApiKey, consoleId)
             val cleanIgdbTitle = igdbTitle.sanitizeForMatching()
 
-            // Exact Match
+            // Exact match
             var matched = gameList.firstOrNull {
                 it.title?.sanitizeForMatching() == cleanIgdbTitle
             }
 
-            // Partial Match
+            // Prefix match with sequel filtering
             if (matched == null) {
-                val sequelRegex = Regex("""^(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|2nd|3rd).*""", RegexOption.IGNORE_CASE)
                 matched = gameList.firstOrNull { game ->
                     val cleanRetro = game.title?.sanitizeForMatching() ?: ""
                     if (cleanRetro.startsWith(cleanIgdbTitle)) {
                         val extra = cleanRetro.removePrefix(cleanIgdbTitle).trim()
-                        !extra.matches(sequelRegex)
-                    } else false
+                        !extra.matches(SEQUEL_REGEX)
+                    } else {
+                        false
+                    }
                 }
             }
 
@@ -93,16 +98,15 @@ class AchievementRepository(
         }.getOrDefault(emptyList())
     }
 
-    private suspend fun fetchRetroAchievements(gameId: String, retroGameId: String): List<Achievement> =
-        withContext(Dispatchers.Default) {
-            runCatching {
-                val response = retroApiService.getGameExtended(retroUsername, retroApiKey, retroGameId)
-                response.achievements?.values
-                    ?.take(700)
-                    ?.map { it.toDomain(gameId) }
-                    ?: emptyList()
-            }.getOrDefault(emptyList())
-        }
+    private suspend fun fetchRetroAchievements(gameId: String, retroGameId: String): List<Achievement> {
+        return runCatching {
+            val response = retroApiService.getGameExtended(retroUsername, retroApiKey, retroGameId)
+            response.achievements?.values
+                ?.take(700)
+                ?.map { it.toDomain(gameId) }
+                ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
 
     private fun createDefaultSystemAchievements(gameId: String) = listOf(
         Achievement(
@@ -125,7 +129,7 @@ class AchievementRepository(
         )
     )
 
-    // MAPPER FOR STEAM ACHIEVEMENTS AND RETRO ACHIEVEMENTS HELPERS
+    // DTO to Domain Mappers
     private fun SteamAchievementDto.toDomain(gameId: String, index: Int) = Achievement(
         id = "steam_${gameId}_${name ?: index}",
         gameId = gameId,
@@ -145,4 +149,8 @@ class AchievementRepository(
         } ?: "",
         source = AchievementSource.RETRO_ACHIEVEMENTS
     )
+
+    companion object {
+        private val SEQUEL_REGEX = Regex("""^(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|2nd|3rd).*""", RegexOption.IGNORE_CASE)
+    }
 }

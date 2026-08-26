@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -20,8 +19,7 @@ fun DetailHeaderBanner(
     coverUrl: String,
     title: String,
     onBackClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onOptionsClick: () -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
@@ -36,34 +34,18 @@ fun DetailHeaderBanner(
             contentScale = ContentScale.Crop
         )
 
-        // Banner with option and back button + title
-        Row(
+        // Back button
+        IconButton(
+            onClick = onBackClick,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(16.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
         ) {
-            IconButton(
-                onClick = onBackClick,
-                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Torna indietro",
-                    tint = Color.White
-                )
-            }
-
-            IconButton(
-                onClick = onOptionsClick,
-                modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Altre opzioni",
-                    tint = Color.White
-                )
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Torna indietro",
+                tint = Color.White
+            )
         }
     }
 }
