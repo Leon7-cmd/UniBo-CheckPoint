@@ -6,34 +6,53 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.checkpoint.data.local.AppDatabase
+import com.example.checkpoint.data.repository.LocalGameRepository
+import com.example.checkpoint.data.repository.UserProfileRepository
 import com.example.checkpoint.ui.main.MainScreen
 import com.example.checkpoint.ui.sections.auth.AuthScreen
 import com.example.checkpoint.ui.sections.auth.AuthUiState
 import com.example.checkpoint.ui.sections.auth.AuthViewModel
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
+// Type-safe root destinations for app-level navigation
 @Serializable object AuthRoute
 @Serializable object MainAppRoute
 
+/**
+ * Root navigation host managing initial auth state resolution, authentication flow, and main app routing.
+ */
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
     val auth = remember { FirebaseAuth.getInstance() }
+    val appContext = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
 
-    // 1. Check if user is logged in
+    // Initialize application-scoped repositories
+    val database = remember { AppDatabase.getDatabase(appContext) }
+    val localGameRepository = remember {
+        LocalGameRepository(database.gameDao(), database.achievementDao())
+    }
+    val userProfileRepository = remember {
+        UserProfileRepository(appContext)
+    }
+
+    // Auth state listener management
     var currentUser by remember { mutableStateOf(auth.currentUser) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isCheckingAuth by remember { mutableStateOf(true) }
 
-    // Listener to update currentUser and isLoading
     DisposableEffect(auth) {
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
-            isLoading = false
+            isCheckingAuth = false
         }
         auth.addAuthStateListener(listener)
         onDispose {
@@ -41,8 +60,8 @@ fun AppNavigation() {
         }
     }
 
-    // 2. Shows a loading screen while the user is being checked
-    if (isLoading) {
+    // Splash/Loading indicator during initial token resolution
+    if (isCheckingAuth) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -52,19 +71,22 @@ fun AppNavigation() {
         return
     }
 
-    // 3. Set the start destination based on the current user
+    // Determine initial graph destination
     val startDestination = if (currentUser != null) MainAppRoute else AuthRoute
 
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
+        // Authentication flow
         composable<AuthRoute> {
-            val viewModel: AuthViewModel = viewModel()
-            val uiState by viewModel.uiState.collectAsState()
+            val authViewModel: AuthViewModel = viewModel(
+                factory = AuthViewModel.Factory(userProfileRepository)
+            )
+            val uiState by authViewModel.uiState.collectAsState()
 
             LaunchedEffect(uiState) {
-                if (uiState is AuthUiState.LoginSuccess) {
+                if (uiState is AuthUiState.LoginSuccess || uiState is AuthUiState.RegisterSuccess) {
                     navController.navigate(MainAppRoute) {
                         popUpTo<AuthRoute> { inclusive = true }
                     }
@@ -73,22 +95,21 @@ fun AppNavigation() {
 
             AuthScreen(
                 uiState = uiState,
-                onLoginClick = { email, pass ->
-                    viewModel.login(email, pass)
-                },
-                onRegisterClick = { username, email, pass, confirmPass ->
-                    viewModel.register(username, email, pass, confirmPass)
-                },
-                onTabSelected = { viewModel.resetState() }
+                onLoginClick = authViewModel::login,
+                onRegisterClick = authViewModel::register,
+                onTabSelected = authViewModel::resetState
             )
         }
 
+        // Main authenticated app flow
         composable<MainAppRoute> {
             MainScreen(
                 onLogout = {
-                    auth.signOut()
-                    navController.navigate(AuthRoute) {
-                        popUpTo<MainAppRoute> { inclusive = true }
+                    scope.launch {
+                        userProfileRepository.logoutAndClear(localGameRepository)
+                        navController.navigate(AuthRoute) {
+                            popUpTo<MainAppRoute> { inclusive = true }
+                        }
                     }
                 }
             )

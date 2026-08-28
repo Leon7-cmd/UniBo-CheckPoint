@@ -1,19 +1,18 @@
 package com.example.checkpoint.ui.main
 
-import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -27,21 +26,42 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.checkpoint.BuildConfig
+import com.example.checkpoint.data.local.AppDatabase
+import com.example.checkpoint.data.model.Friend
 import com.example.checkpoint.data.remote.NetworkClient
 import com.example.checkpoint.data.repository.AchievementRepository
+import com.example.checkpoint.data.repository.FriendsRepository
 import com.example.checkpoint.data.repository.IgdbRepository
+import com.example.checkpoint.data.repository.LocalGameRepository
+import com.example.checkpoint.data.repository.SettingsRepository
+import com.example.checkpoint.data.repository.UserProfileRepository
 import com.example.checkpoint.ui.navigation.*
-import com.example.checkpoint.ui.sections.detail.DetailUiState
 import com.example.checkpoint.ui.sections.detail.GameDetailScreen
 import com.example.checkpoint.ui.sections.detail.GameDetailViewModel
+import com.example.checkpoint.ui.sections.friends.FriendsScreen
+import com.example.checkpoint.ui.sections.friends.FriendsViewModel
+import com.example.checkpoint.ui.sections.friends.components.detail.FriendDetailScreen
+import com.example.checkpoint.ui.sections.friends.components.request.FriendRequestsScreen
 import com.example.checkpoint.ui.sections.library.LibraryScreen
 import com.example.checkpoint.ui.sections.library.LibraryViewModel
+import com.example.checkpoint.ui.sections.profile.ProfileScreen
+import com.example.checkpoint.ui.sections.profile.ProfileViewModel
+import com.example.checkpoint.ui.sections.profile.components.badge.BadgesListScreen
 import com.example.checkpoint.ui.sections.search.SearchScreen
+import com.example.checkpoint.ui.sections.search.SearchViewModel
+import com.example.checkpoint.ui.sections.settings.SettingsScreen
+import com.example.checkpoint.ui.sections.settings.SettingsViewModel
 import kotlinx.serialization.Serializable
 
-@Serializable
-data class GameDetailRoute(val gameId: String)
+// Type-safe routes for sub-destinations
+@Serializable data class GameDetailRoute(val gameId: String)
+@Serializable object BadgesRoute
+@Serializable data class FriendDetailRoute(val friendId: String)
+@Serializable object FriendRequestsRoute
 
+/**
+ * Main application host managing bottom bar navigation, top-level tabs, and secondary screen transitions.
+ */
 @Composable
 fun MainScreen(
     onLogout: () -> Unit
@@ -50,208 +70,354 @@ fun MainScreen(
     val navBackStackEntry by bottomNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    // 1. Define the top-level routes
-    val topLevelRoutes = listOf(
-        ProfileRoute::class,
-        LibraryRoute::class,
-        SearchRoute::class,
-        FriendsRoute::class,
-        SettingsRoute::class
-    )
+    val appContext = LocalContext.current.applicationContext
 
-    // 2. Check if the destination is one of the top-level routes
-    val shouldShowBottomBar = topLevelRoutes.any { routeClass ->
-        currentDestination?.hierarchy?.any { it.hasRoute(routeClass) } == true
+    // Repositories initialization
+    val userProfileRepository = remember { UserProfileRepository(appContext) }
+    val localGameRepository = remember {
+        val database = AppDatabase.getDatabase(appContext)
+        LocalGameRepository(
+            gameDao = database.gameDao(),
+            achievementDao = database.achievementDao()
+        )
+    }
+    val settingsRepository = remember { SettingsRepository(appContext) }
+    val friendsRepository = remember { FriendsRepository() }
+
+    val igdbRepository = remember {
+        IgdbRepository(
+            authApiService = NetworkClient.twitchAuthApiService,
+            igdbApiService = NetworkClient.igdbApiService,
+            clientId = BuildConfig.IGDB_CLIENT_ID,
+            clientSecret = BuildConfig.IGDB_CLIENT_SECRET
+        )
+    }
+
+    val achievementRepository = remember {
+        AchievementRepository(
+            steamApiService = NetworkClient.steamApiService,
+            retroApiService = NetworkClient.retroApiService
+        )
+    }
+
+    val profileViewModel: ProfileViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer<ProfileViewModel> {
+                ProfileViewModel(
+                    localGameRepository = localGameRepository,
+                    userProfileRepository = userProfileRepository
+                )
+            }
+        }
+    )
+    val profileUiState by profileViewModel.uiState.collectAsState()
+
+    val isTopLevelScreen = currentDestination?.hierarchy?.any { dest ->
+        dest.hasRoute(ProfileRoute::class) ||
+                dest.hasRoute(LibraryRoute::class) ||
+                dest.hasRoute(SearchRoute::class) ||
+                dest.hasRoute(FriendsRoute::class) ||
+                dest.hasRoute(SettingsRoute::class)
+    } == true
+
+    LaunchedEffect(Unit) {
+        localGameRepository.syncWithCloud()
+        localGameRepository.syncAchievementsWithCloud()
     }
 
     Scaffold(
         bottomBar = {
-            if (shouldShowBottomBar) {
+            if (isTopLevelScreen) {
                 NavigationBar {
-                    val items = listOf(
-                        Triple(BottomNavItem.PROFILE, ProfileRoute) {
-                            bottomNavController.navigate(ProfileRoute) {
-                                popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        Triple(BottomNavItem.LIBRARY, LibraryRoute) {
-                            bottomNavController.navigate(LibraryRoute) {
-                                popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        Triple(BottomNavItem.SEARCH, SearchRoute) {
-                            bottomNavController.navigate(SearchRoute) {
-                                popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        Triple(BottomNavItem.FRIENDS, FriendsRoute) {
-                            bottomNavController.navigate(FriendsRoute) {
-                                popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        Triple(BottomNavItem.SETTINGS, SettingsRoute) {
-                            bottomNavController.navigate(SettingsRoute) {
-                                popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
-
-                    items.forEach { (item, route, navigate) ->
-                        val isSelected = currentDestination?.hierarchy?.any { it.hasRoute(route::class) } == true
-
+                    BottomNavItem.entries.forEach { item ->
+                        val isSelected = currentDestination.hierarchy.any { it.hasRoute(item.route::class) }
                         NavigationBarItem(
                             icon = { Icon(item.icon, contentDescription = item.title) },
                             label = { Text(item.title) },
                             selected = isSelected,
-                            onClick = navigate
+                            onClick = {
+                                bottomNavController.navigate(item.route) {
+                                    popUpTo(bottomNavController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
                         )
                     }
                 }
             }
         }
     ) { innerPadding ->
+        val topPadding = innerPadding.calculateTopPadding()
+        val bottomBarPadding = if (isTopLevelScreen) innerPadding.calculateBottomPadding() else 0.dp
+
         NavHost(
             navController = bottomNavController,
             startDestination = ProfileRoute,
-            // Pass innerPadding to NavHost
-            modifier = Modifier.padding(if (shouldShowBottomBar) innerPadding else PaddingValues(0.dp))
+            enterTransition = {
+                fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.98f, animationSpec = tween(180, easing = FastOutSlowInEasing))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(120, easing = FastOutSlowInEasing))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing))
+            },
+            popExitTransition = {
+                fadeOut(animationSpec = tween(120, easing = FastOutSlowInEasing)) +
+                        scaleOut(targetScale = 0.98f, animationSpec = tween(120, easing = FastOutSlowInEasing))
+            },
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Profile Tab
             composable<ProfileRoute> {
-                PlaceholderScreen(title = "Schermata Profilo (XP, Level, Badge)")
+                ProfileScreen(
+                    uiState = profileUiState,
+                    onSeeAllBadgesClick = { bottomNavController.navigate(BadgesRoute) },
+                    onAvatarSelected = profileViewModel::onAvatarSelected,
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                )
             }
 
-            composable<LibraryRoute>(
-                popEnterTransition = { fadeIn(animationSpec = tween(200)) }
+            // All Badges list
+            composable<BadgesRoute>(
+                enterTransition = {
+                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
+                }
             ) {
-                val viewModel: LibraryViewModel = viewModel()
-                val uiState by viewModel.uiState.collectAsState()
-
-                LibraryScreen(
-                    uiState = uiState,
-                    onGameClick = { gameId ->
-                        bottomNavController.navigate(GameDetailRoute(gameId))
-                    }
+                BadgesListScreen(
+                    badges = profileUiState.badges,
+                    onBackClick = { bottomNavController.popBackStack() }
                 )
             }
 
-            composable<SearchRoute> {
-                SearchScreen(
-                    onGameClick = { gameId ->
-                        bottomNavController.navigate(GameDetailRoute(gameId = gameId))
-                    }
-                )
-            }
-
-            composable<GameDetailRoute>(
-                popExitTransition = { fadeOut(animationSpec = tween(150)) },
-                popEnterTransition = { EnterTransition.None },
-            ) { backStackEntry ->
-                val route: GameDetailRoute = backStackEntry.toRoute()
-
-                // 1. Inizializziamo il ViewModel usando viewModelFactory per passare i Repository
-                val detailViewModel: GameDetailViewModel = viewModel(
+            // Library Tab
+            composable<LibraryRoute> {
+                val libraryViewModel: LibraryViewModel = viewModel(
                     factory = viewModelFactory {
-                        initializer {
-                            // Recupera le istanze dei repository dal tuo NetworkClient / App module
-                            val igdbRepository = IgdbRepository(
-                                authApiService = NetworkClient.twitchAuthApiService,
-                                igdbApiService = NetworkClient.igdbApiService,
-                                clientId = BuildConfig.IGDB_CLIENT_ID,
-                                clientSecret = BuildConfig.IGDB_CLIENT_SECRET
-                            )
-                            val achievementRepository = AchievementRepository(
-                                steamApiService = NetworkClient.steamApiService,
-                                retroApiService = NetworkClient.retroApiService
-                            )
-
-                            GameDetailViewModel(
-                                igdbRepository = igdbRepository,
-                                achievementRepository = achievementRepository
+                        initializer<LibraryViewModel> {
+                            LibraryViewModel(
+                                localGameRepository = localGameRepository
                             )
                         }
                     }
                 )
+                val uiState by libraryViewModel.uiState.collectAsState()
 
+                LibraryScreen(
+                    uiState = uiState,
+                    onSectionSelected = libraryViewModel::selectSection,
+                    onBackToMainLibrary = libraryViewModel::clearSelectedSection,
+                    onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) },
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                )
+            }
+
+            // Search Tab
+            composable<SearchRoute> {
+                val searchViewModel: SearchViewModel = viewModel()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = topPadding, bottom = bottomBarPadding)
+                ) {
+                    SearchScreen(
+                        onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) },
+                        viewModel = searchViewModel
+                    )
+                }
+            }
+
+            // Game Detail
+            composable<GameDetailRoute>(
+                enterTransition = {
+                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
+                }
+            ) { backStackEntry ->
+                val route: GameDetailRoute = backStackEntry.toRoute()
+                val detailViewModel: GameDetailViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer<GameDetailViewModel> {
+                            GameDetailViewModel(
+                                igdbRepository = igdbRepository,
+                                achievementRepository = achievementRepository,
+                                localGameRepository = localGameRepository,
+                                userProfileRepository = userProfileRepository
+                            )
+                        }
+                    }
+                )
                 val uiState by detailViewModel.uiState.collectAsState()
-                val achievements by detailViewModel.achievements.collectAsState()
-                val isLoadingAchievements by detailViewModel.isLoadingAchievements.collectAsState()
 
-                // 2. Un unico LaunchedEffect basato sul gameId
                 LaunchedEffect(route.gameId) {
                     detailViewModel.loadGameDetails(route.gameId)
                 }
 
-                // 3. Rendering in base allo stato
-                when (val state = uiState) {
-                    is DetailUiState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
+                when {
+                    uiState.isLoadingDetails -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     }
-                    is DetailUiState.Error -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = state.message, color = MaterialTheme.colorScheme.error)
+                    uiState.errorMessage != null && uiState.game == null -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(text = uiState.errorMessage.orEmpty(), color = MaterialTheme.colorScheme.error)
                         }
                     }
-                    is DetailUiState.Success -> {
-                        GameDetailScreen(
-                            game = state.game,
-                            achievements = achievements,
-                            isLoadingAchievements = isLoadingAchievements,
-                            onToggleAchievement = { achievementId ->
-                                detailViewModel.toggleAchievement(achievementId)
-                            },
-                            onBackClick = { bottomNavController.popBackStack() },
-                            onFavoriteToggle = { detailViewModel.toggleFavorite() },
-                            onToPlayToggle = { detailViewModel.toggleToPlay() },
-                            onRatingChange = { newRating -> detailViewModel.updateRating(newRating) }
-                        )
+                    else -> {
+                        uiState.game?.let { currentGame ->
+                            GameDetailScreen(
+                                game = currentGame,
+                                achievements = uiState.achievements,
+                                communityReviews = uiState.communityReviews,
+                                averageRating = uiState.averageRating,
+                                totalReviewsCount = uiState.totalReviewsCount,
+                                isLoadingAchievements = uiState.isLoadingAchievements,
+                                isLoadingCommunityReviews = uiState.isLoadingCommunityReviews,
+                                onToggleAchievement = detailViewModel::toggleAchievement,
+                                onBackClick = { bottomNavController.popBackStack() },
+                                onFavoriteToggle = detailViewModel::toggleFavorite,
+                                onToPlayToggle = detailViewModel::toggleToPlay,
+                                onSaveReview = detailViewModel::saveReview,
+                                onDeleteReview = detailViewModel::deleteReview
+                            )
+                        }
                     }
                 }
             }
 
+            // Friends Tab
             composable<FriendsRoute> {
-                PlaceholderScreen(title = "Schermata Amici & Codice Amico")
+                val friendsViewModel: FriendsViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer<FriendsViewModel> {
+                            FriendsViewModel(friendsRepository = friendsRepository)
+                        }
+                    }
+                )
+                val uiState by friendsViewModel.uiState.collectAsState()
+
+                FriendsScreen(
+                    uiState = uiState,
+                    onSearchQueryChange = friendsViewModel::onSearchQueryChanged,
+                    onOpenAddFriend = friendsViewModel::openAddFriendDialog,
+                    onOpenRequestsClick = { bottomNavController.navigate(FriendRequestsRoute) },
+                    onCloseAddFriend = friendsViewModel::closeAddFriendDialog,
+                    onAddFriendConfirm = friendsViewModel::addFriend,
+                    onFriendClick = { friendId -> bottomNavController.navigate(FriendDetailRoute(friendId)) },
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                )
             }
 
-            composable<SettingsRoute> {
-                PlaceholderScreen(title = "Impostazioni Tema & Account", onLogout = onLogout)
-            }
-        }
-    }
-}
-
-@Composable
-fun PlaceholderScreen(title: String, onLogout: (() -> Unit)? = null) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
-            if (onLogout != null) {
-                Spacer(modifier = Modifier.padding(8.dp))
-                Button(onClick = onLogout) {
-                    Text("Logout")
+            // Friend Requests Screen
+            composable<FriendRequestsRoute>(
+                enterTransition = {
+                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
                 }
+            ) {
+                val friendsViewModel: FriendsViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer<FriendsViewModel> {
+                            FriendsViewModel(friendsRepository = friendsRepository)
+                        }
+                    }
+                )
+                val uiState by friendsViewModel.uiState.collectAsState()
+
+                FriendRequestsScreen(
+                    requests = uiState.friendRequests,
+                    onAccept = friendsViewModel::acceptRequest,
+                    onReject = friendsViewModel::rejectRequest,
+                    onBackClick = { bottomNavController.popBackStack() }
+                )
+            }
+
+            // Friend Detail Screen
+            composable<FriendDetailRoute>(
+                enterTransition = {
+                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
+                }
+            ) { backStackEntry ->
+                val route: FriendDetailRoute = backStackEntry.toRoute()
+                val friendsViewModel: FriendsViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer<FriendsViewModel> {
+                            FriendsViewModel(friendsRepository = friendsRepository)
+                        }
+                    }
+                )
+
+                var friend by remember { mutableStateOf<Friend?>(null) }
+                var isLoadingFriend by remember { mutableStateOf(true) }
+
+                LaunchedEffect(route.friendId) {
+                    isLoadingFriend = true
+                    friend = friendsRepository.getFriendById(route.friendId)
+                    isLoadingFriend = false
+                }
+
+                if (isLoadingFriend) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    friend?.let { currentFriend ->
+                        FriendDetailScreen(
+                            friend = currentFriend,
+                            onBackClick = { bottomNavController.popBackStack() },
+                            onRemoveFriend = { friendId ->
+                                friendsViewModel.removeFriend(friendId) {
+                                    bottomNavController.popBackStack()
+                                }
+                            },
+                            onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) }
+                        )
+                    } ?: Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Impossibile caricare il profilo dell'amico.", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            // Settings Tab
+            composable<SettingsRoute> {
+                val settingsViewModel: SettingsViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer<SettingsViewModel> {
+                            SettingsViewModel(settingsRepository = settingsRepository)
+                        }
+                    }
+                )
+                val uiState by settingsViewModel.uiState.collectAsState()
+
+                SettingsScreen(
+                    uiState = uiState,
+                    onThemeChange = settingsViewModel::updateTheme,
+                    onAccentColorChange = settingsViewModel::updateAccentColor,
+                    onStatsPrivacyChange = settingsViewModel::updateStatsPrivacy,
+                    onBadgesPrivacyChange = settingsViewModel::updateBadgesPrivacy,
+                    onLibraryPrivacyChange = settingsViewModel::updateLibraryPrivacy,
+                    onSaveClick = settingsViewModel::saveAllSettings,
+                    onRevertSettings = settingsViewModel::revertSettings,
+                    onDismissBanner = settingsViewModel::dismissSuccessBanner,
+                    onLogoutClick = {
+                        settingsRepository.resetOnLogout()
+                        onLogout()
+                    },
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                )
             }
         }
     }
