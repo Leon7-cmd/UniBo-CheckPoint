@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Tema usato durante il caricamento iniziale -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Imposta lo sfondo scuro/nero anziché bianco -->
+        <item name="windowSplashScreenBackground">#121212</item>
 
-    <style name="Theme.CheckPoint" parent="android:Theme.Material.Light.NoActionBar" />
+        <!-- Rimuove l'icona centrale al boot -->
+        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+
+        <!-- Tema definitivo da applicare non appena l'Activity è pronta -->
+        <item name="postSplashScreenTheme">@style/Theme.Checkpoint</item>
+    </style>
+
+    <!-- Tuo tema normale -->
+    <style name="Theme.Checkpoint" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#121212</item>
+    </style>
 </resources>
