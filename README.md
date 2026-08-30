@@ -11,7 +11,7 @@
 ## 🌟 Punti chiave
 
 - **Tracciamento & Libreria:** Organizzazione della propria collezione videoludica per stato di avanzamento (*Preferiti*, *Completati*, *In Corso*).
-- **Gamification & Social:** Sistema di progressione a livelli con XP, badge sbloccabili, gestione amici tramite Friend Code univoco (`CKP-XXXX`) e controllo personalizzato della privacy.
+- **Gamification & Social:** Sistema di progressione a livelli con XP, badge sbloccabili, gestione amici tramite Friend Code univoco (`CKP-000000`) e controllo personalizzato della privacy.
 - **Architettura MVVM Reattiva:** Interfaccia dichiarativa realizzata con Jetpack Compose e Material Design 3, sincronizzata tramite `StateFlow` e Kotlin Coroutines.
 - **Strategia Offline-First:** Persistenza locale SQLite gestita con Room per caching istantaneo e sincronizzazione cloud su Firebase (Auth e Cloud Firestore).
 - **Integrazioni Esterne:** Ricerca globale e metadati multimediali tramite IGDB (Twitch OAuth), Steam Web API e RetroAchievements, con caricamento asincrono delle immagini via Coil.
