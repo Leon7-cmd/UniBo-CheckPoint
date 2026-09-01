@@ -12,6 +12,9 @@ import com.example.checkpoint.data.remote.steam.SteamApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private const val MAX_ACHIEVEMENTS = 700
+private val SEQUEL_REGEX = Regex("""^(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|2nd|3rd).*""", RegexOption.IGNORE_CASE)
+
 /**
  * Repository responsible for aggregating achievements from Steam, RetroAchievements, or generating system fallbacks.
  */
@@ -92,7 +95,7 @@ class AchievementRepository(
         return runCatching {
             val response = steamApiService.getSchemaForGame(apiKey = steamApiKey, appId = steamAppId)
             response.game?.availableGameStats?.achievements
-                ?.take(700)
+                ?.take(MAX_ACHIEVEMENTS)
                 ?.mapIndexed { index, dto -> dto.toDomain(gameId, index) }
                 ?: emptyList()
         }.getOrDefault(emptyList())
@@ -102,13 +105,13 @@ class AchievementRepository(
         return runCatching {
             val response = retroApiService.getGameExtended(retroUsername, retroApiKey, retroGameId)
             response.achievements?.values
-                ?.take(700)
+                ?.take(MAX_ACHIEVEMENTS)
                 ?.map { it.toDomain(gameId) }
                 ?: emptyList()
         }.getOrDefault(emptyList())
     }
 
-    private fun createDefaultSystemAchievements(gameId: String) = listOf(
+    fun createDefaultSystemAchievements(gameId: String) = listOf(
         Achievement(
             id = "sys_${gameId}_started",
             gameId = gameId,
@@ -121,8 +124,17 @@ class AchievementRepository(
         Achievement(
             id = "sys_${gameId}_completed",
             gameId = gameId,
-            title = "Gioco Completato",
+            title = "Storia Finita",
             description = "Spunta quando hai terminato la storia principale",
+            source = AchievementSource.SYSTEM_DEFAULT,
+            iconUrl = "",
+            isCompleted = false
+        ),
+        Achievement(
+            id = "sys_${gameId}_100",
+            gameId = gameId,
+            title = "100%",
+            description = "Spunta quando hai terminato il gioco al 100%",
             source = AchievementSource.SYSTEM_DEFAULT,
             iconUrl = "",
             isCompleted = false
@@ -149,8 +161,4 @@ class AchievementRepository(
         } ?: "",
         source = AchievementSource.RETRO_ACHIEVEMENTS
     )
-
-    companion object {
-        private val SEQUEL_REGEX = Regex("""^(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|2nd|3rd).*""", RegexOption.IGNORE_CASE)
-    }
 }

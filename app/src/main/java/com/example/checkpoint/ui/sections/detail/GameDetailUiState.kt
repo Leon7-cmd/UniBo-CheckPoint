@@ -16,7 +16,7 @@ data class GameDetailUiState(
     val averageRating: Float? = null,
     val totalReviewsCount: Int = 0,
     val isLoadingDetails: Boolean = true,
-    val isLoadingAchievements: Boolean = false,
+    val isLoadingAchievements: Boolean = true,
     val isLoadingCommunityReviews: Boolean = false,
     val errorMessage: String? = null
 )

@@ -13,14 +13,12 @@ class LibraryViewModel(
 ) : ViewModel() {
 
     private val _currentSection = MutableStateFlow<LibrarySectionType?>(null)
-    private val _isLoading = MutableStateFlow(false)
 
     // Reactive library UI state aggregation computed off the main thread
     val uiState: StateFlow<LibraryUiState> = combine(
         localGameRepository.allGames,
-        _currentSection,
-        _isLoading
-    ) { allGames, currentSection, isLoading ->
+        _currentSection
+    ) { allGames, currentSection ->
         val activeGames = ArrayList<Game>()
         val favorites = ArrayList<Game>()
         val completed = ArrayList<Game>()
@@ -54,7 +52,7 @@ class LibraryViewModel(
             overview = overviewData,
             games = activeGames,
             currentSection = currentSection,
-            isLoading = isLoading
+            isLoading = false
         )
     }
         .flowOn(Dispatchers.Default)

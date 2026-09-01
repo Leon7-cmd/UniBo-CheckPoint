@@ -9,7 +9,6 @@ import com.example.checkpoint.domain.BadgeCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class ProfileViewModel(
     private val localGameRepository: LocalGameRepository,
@@ -40,7 +39,7 @@ class ProfileViewModel(
 
     // Fetch and sync user profile from cloud
     private fun syncProfile() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val synced = userProfileRepository.syncUserProfile() ?: return@launch
             _uiState.update {
                 it.copy(
@@ -57,7 +56,7 @@ class ProfileViewModel(
     fun onAvatarSelected(uri: Uri?) {
         if (uri == null) return
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val savedPathOrUrl = userProfileRepository.updateAvatarUri(uri) ?: return@launch
             _uiState.update { it.copy(avatarUrl = savedPathOrUrl) }
 
@@ -94,15 +93,13 @@ class ProfileViewModel(
                 }
 
                 // Background sync for updated progression
-                withContext(Dispatchers.IO) {
-                    userProfileRepository.syncProfileStatsAndBadges(
-                        level = progression.level,
-                        currentXp = progression.currentXp,
-                        nextLevelXp = progression.nextLevelXp,
-                        stats = progression.stats,
-                        badges = progression.badges
-                    )
-                }
+                userProfileRepository.syncProfileStatsAndBadges(
+                    level = progression.level,
+                    currentXp = progression.currentXp,
+                    nextLevelXp = progression.nextLevelXp,
+                    stats = progression.stats,
+                    badges = progression.badges
+                )
             }
             .launchIn(viewModelScope)
     }

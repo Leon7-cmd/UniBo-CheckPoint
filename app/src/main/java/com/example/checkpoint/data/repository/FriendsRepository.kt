@@ -11,10 +11,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -38,7 +35,7 @@ class FriendsRepository(
             return@callbackFlow
         }
 
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        var fetchJob: Job? = null
 
         val listener = firestore.collection("users")
             .document(uid)
@@ -49,14 +46,15 @@ class FriendsRepository(
                     return@addSnapshotListener
                 }
 
-                val friendIds = snapshot?.documents?.map { it.id } ?: emptyList()
+                val friendIds = snapshot?.documents?.map { it.id }.orEmpty()
                 if (friendIds.isEmpty()) {
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
 
                 // Fetch full user profiles in chunks to retrieve fresh usernames, avatars, and levels
-                scope.launch {
+                fetchJob?.cancel()
+                fetchJob = launch {
                     try {
                         val friendsList = mutableListOf<Friend>()
 
@@ -68,18 +66,6 @@ class FriendsRepository(
                                 .await()
 
                             usersSnapshot.documents.forEach { doc ->
-                                val statsMap = doc.get("stats") as? Map<*, *>
-                                val stats = UserStats(
-                                    gamesPlayed = (statsMap?.get("gamesPlayed") as? Number)?.toInt()
-                                        ?: doc.getLong("gamesPlayed")?.toInt() ?: 0,
-                                    gamesCompleted = (statsMap?.get("gamesCompleted") as? Number)?.toInt()
-                                        ?: doc.getLong("gamesCompleted")?.toInt() ?: 0,
-                                    gamesReviewed = (statsMap?.get("gamesReviewed") as? Number)?.toInt()
-                                        ?: doc.getLong("gamesReviewed")?.toInt() ?: 0,
-                                    totalAchievements = (statsMap?.get("totalAchievements") as? Number)?.toInt()
-                                        ?: doc.getLong("totalAchievements")?.toInt() ?: 0
-                                )
-
                                 friendsList.add(
                                     Friend(
                                         id = doc.id,
@@ -89,7 +75,7 @@ class FriendsRepository(
                                         level = doc.getLong("level")?.toInt() ?: 1,
                                         currentXp = doc.getLong("currentXp")?.toInt() ?: 0,
                                         nextLevelXp = doc.getLong("nextLevelXp")?.toInt() ?: BadgeCalculator.XP_PER_LEVEL,
-                                        stats = stats,
+                                        stats = doc.extractUserStats(),
                                         badges = emptyList(),
                                         games = emptyList(),
                                         statsPrivacy = parsePrivacy(doc.getString("statsPrivacy")),
@@ -108,7 +94,7 @@ class FriendsRepository(
 
         awaitClose {
             listener.remove()
-            scope.cancel()
+            fetchJob?.cancel()
         }
     }
 
@@ -136,7 +122,7 @@ class FriendsRepository(
                         senderLevel = doc.getLong("senderLevel")?.toInt() ?: 1,
                         timestamp = doc.getLong("timestamp") ?: 0L
                     )
-                } ?: emptyList()
+                }.orEmpty()
                 trySend(requests)
             }
 
@@ -156,9 +142,7 @@ class FriendsRepository(
             throw NoSuchElementException("Nessun utente trovato con questo codice!")
         }
 
-        val targetUserDoc = querySnapshot.documents.first()
-        val targetUid = targetUserDoc.id
-
+        val targetUid = querySnapshot.documents.first().id
         if (targetUid == myUid) {
             throw IllegalArgumentException("Non puoi inviare una richiesta a te stesso!")
         }
@@ -230,33 +214,29 @@ class FriendsRepository(
     }
 
     // Fetch complete friend profile including library and unlocked trophies
-    suspend fun getFriendById(friendId: String): Friend? {
-        return try {
-            val userDoc = firestore.collection("users").document(friendId).get().await()
-            if (!userDoc.exists()) return null
+    suspend fun getFriendById(friendId: String): Friend? = runCatching {
+        val userDoc = firestore.collection("users").document(friendId).get().await()
+        if (!userDoc.exists()) return null
 
-            val librarySnapshot = firestore.collection("users").document(friendId).collection("library").get().await()
-            val allGames = librarySnapshot.documents.map { doc ->
-                Game(
-                    id = doc.id,
-                    title = doc.getString("title").orEmpty(),
-                    coverUrl = doc.getString("coverUrl").orEmpty(),
-                    rating = doc.getDouble("rating")?.toFloat() ?: 0f,
-                    isFavorite = doc.getBoolean("isFavorite") ?: false,
-                    status = doc.getString("status")?.let { runCatching { GameStatus.valueOf(it) }.getOrNull() } ?: GameStatus.NONE
-                )
-            }
-
-            val achievementsSnapshot = runCatching {
-                firestore.collection("users").document(friendId).collection("achievements").whereEqualTo("isCompleted", true).get().await()
-            }.getOrNull()
-            val actualTotalAchievements = achievementsSnapshot?.size() ?: 0
-
-            mapDocToFriend(userDoc, allGames, actualTotalAchievements)
-        } catch (_: Exception) {
-            null
+        val librarySnapshot = firestore.collection("users").document(friendId).collection("library").get().await()
+        val allGames = librarySnapshot.documents.map { doc ->
+            Game(
+                id = doc.id,
+                title = doc.getString("title").orEmpty(),
+                coverUrl = doc.getString("coverUrl").orEmpty(),
+                rating = doc.getDouble("rating")?.toFloat() ?: 0f,
+                isFavorite = doc.getBoolean("isFavorite") ?: false,
+                status = doc.getString("status")?.let { runCatching { GameStatus.valueOf(it) }.getOrNull() } ?: GameStatus.NONE
+            )
         }
-    }
+
+        val achievementsSnapshot = runCatching {
+            firestore.collection("users").document(friendId).collection("achievements").whereEqualTo("isCompleted", true).get().await()
+        }.getOrNull()
+        val actualTotalAchievements = achievementsSnapshot?.size() ?: 0
+
+        mapDocToFriend(userDoc, allGames, actualTotalAchievements)
+    }.getOrNull()
 
     private fun mapDocToFriend(
         doc: DocumentSnapshot,
@@ -282,8 +262,16 @@ class FriendsRepository(
         )
     }
 
-    private fun parsePrivacy(value: String?): PrivacyLevel {
-        if (value == null) return PrivacyLevel.PUBLIC
-        return runCatching { PrivacyLevel.valueOf(value) }.getOrDefault(PrivacyLevel.PUBLIC)
+    private fun DocumentSnapshot.extractUserStats(): UserStats {
+        val statsMap = get("stats") as? Map<*, *>
+        return UserStats(
+            gamesPlayed = (statsMap?.get("gamesPlayed") as? Number)?.toInt() ?: getLong("gamesPlayed")?.toInt() ?: 0,
+            gamesCompleted = (statsMap?.get("gamesCompleted") as? Number)?.toInt() ?: getLong("gamesCompleted")?.toInt() ?: 0,
+            gamesReviewed = (statsMap?.get("gamesReviewed") as? Number)?.toInt() ?: getLong("gamesReviewed")?.toInt() ?: 0,
+            totalAchievements = (statsMap?.get("totalAchievements") as? Number)?.toInt() ?: getLong("totalAchievements")?.toInt() ?: 0
+        )
     }
+
+    private fun parsePrivacy(value: String?): PrivacyLevel =
+        value?.let { runCatching { PrivacyLevel.valueOf(it) }.getOrNull() } ?: PrivacyLevel.PUBLIC
 }

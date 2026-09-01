@@ -8,6 +8,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -60,59 +62,62 @@ fun AppNavigation() {
         }
     }
 
-    // Splash/Loading indicator during initial token resolution
     if (isCheckingAuth) {
+        // Splash/Loading indicator during initial token resolution
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator()
         }
-        return
-    }
+    } else {
+        // Determine initial graph destination
+        val startDestination = if (currentUser != null) MainAppRoute else AuthRoute
 
-    // Determine initial graph destination
-    val startDestination = if (currentUser != null) MainAppRoute else AuthRoute
-
-    NavHost(
-        navController = navController,
-        startDestination = startDestination
-    ) {
-        // Authentication flow
-        composable<AuthRoute> {
-            val authViewModel: AuthViewModel = viewModel(
-                factory = AuthViewModel.Factory(userProfileRepository)
-            )
-            val uiState by authViewModel.uiState.collectAsState()
-
-            LaunchedEffect(uiState) {
-                if (uiState is AuthUiState.LoginSuccess || uiState is AuthUiState.RegisterSuccess) {
-                    navController.navigate(MainAppRoute) {
-                        popUpTo<AuthRoute> { inclusive = true }
+        NavHost(
+            navController = navController,
+            startDestination = startDestination
+        ) {
+            // Authentication flow
+            composable<AuthRoute> {
+                val authViewModel: AuthViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            AuthViewModel(userProfileRepository)
+                        }
                     }
-                }
-            }
+                )
+                val uiState by authViewModel.uiState.collectAsState()
 
-            AuthScreen(
-                uiState = uiState,
-                onLoginClick = authViewModel::login,
-                onRegisterClick = authViewModel::register,
-                onTabSelected = authViewModel::resetState
-            )
-        }
-
-        // Main authenticated app flow
-        composable<MainAppRoute> {
-            MainScreen(
-                onLogout = {
-                    scope.launch {
-                        userProfileRepository.logoutAndClear(localGameRepository)
-                        navController.navigate(AuthRoute) {
-                            popUpTo<MainAppRoute> { inclusive = true }
+                LaunchedEffect(uiState) {
+                    if (uiState is AuthUiState.LoginSuccess || uiState is AuthUiState.RegisterSuccess) {
+                        navController.navigate(MainAppRoute) {
+                            popUpTo<AuthRoute> { inclusive = true }
                         }
                     }
                 }
-            )
+
+                AuthScreen(
+                    uiState = uiState,
+                    onLoginClick = authViewModel::login,
+                    onRegisterClick = authViewModel::register,
+                    onTabSelected = authViewModel::resetState
+                )
+            }
+
+            // Main authenticated app flow
+            composable<MainAppRoute> {
+                MainScreen(
+                    onLogout = {
+                        scope.launch {
+                            userProfileRepository.logoutAndClear(localGameRepository)
+                            navController.navigate(AuthRoute) {
+                                popUpTo<MainAppRoute> { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
         }
     }
 }

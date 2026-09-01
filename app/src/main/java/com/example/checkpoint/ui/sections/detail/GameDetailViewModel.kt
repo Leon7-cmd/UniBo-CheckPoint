@@ -14,7 +14,6 @@ import com.example.checkpoint.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +21,6 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 class GameDetailViewModel(
@@ -37,7 +35,7 @@ class GameDetailViewModel(
     private val _uiState = MutableStateFlow(GameDetailUiState())
     val uiState: StateFlow<GameDetailUiState> = _uiState.asStateFlow()
 
-    // Load game details from local database or remote IGDB API
+    // Load game details prioritizing local Room cache for offline-first support
     fun loadGameDetails(gameId: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingDetails = true, errorMessage = null) }
@@ -45,45 +43,26 @@ class GameDetailViewModel(
 
             val localGame = localGameRepository.getGameById(gameId).firstOrNull()
 
-            if (localGame != null && localGame.description.isNotBlank()) {
+            // 1. If game exists in Room, load it immediately without waiting for network
+            if (localGame != null) {
                 applyLoadedGame(localGame)
                 loadAchievements(localGame)
                 return@launch
             }
 
+            // 2. Otherwise fetch from IGDB remote API
             igdbRepository.getGameById(gameId)
                 .onSuccess { remoteGame ->
-                    val mergedGame = localGame?.let { local ->
-                        remoteGame.copy(
-                            isFavorite = local.isFavorite,
-                            status = local.status,
-                            rating = local.rating,
-                            userReview = local.userReview,
-                            note = local.note,
-                            steamAppId = local.steamAppId ?: remoteGame.steamAppId,
-                            retroGameId = local.retroGameId ?: remoteGame.retroGameId
-                        )
-                    } ?: remoteGame
-
-                    applyLoadedGame(mergedGame)
-
-                    if (localGame != null) {
-                        localGameRepository.saveGame(mergedGame)
-                    }
-
-                    loadAchievements(mergedGame)
+                    applyLoadedGame(remoteGame)
+                    localGameRepository.saveGame(remoteGame)
+                    loadAchievements(remoteGame)
                 }
                 .onFailure { error ->
-                    if (localGame != null) {
-                        applyLoadedGame(localGame)
-                        loadAchievements(localGame)
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isLoadingDetails = false,
-                                errorMessage = error.localizedMessage ?: "Impossibile caricare i dettagli del gioco."
-                            )
-                        }
+                    _uiState.update {
+                        it.copy(
+                            isLoadingDetails = false,
+                            errorMessage = error.localizedMessage ?: "Impossibile caricare i dettagli del gioco."
+                        )
                     }
                 }
         }
@@ -109,13 +88,11 @@ class GameDetailViewModel(
             _uiState.update { it.copy(isLoadingCommunityReviews = true) }
             val currentUid = auth.currentUser?.uid
             try {
-                val snapshot = withContext(Dispatchers.IO) {
-                    firestore.collection("games_reviews")
-                        .document(gameId)
-                        .collection("reviews")
-                        .get()
-                        .await()
-                }
+                val snapshot = firestore.collection("games_reviews")
+                    .document(gameId)
+                    .collection("reviews")
+                    .get()
+                    .await()
 
                 val list = snapshot.documents.mapNotNull { doc ->
                     val uid = doc.getString("userId") ?: doc.id
@@ -126,7 +103,7 @@ class GameDetailViewModel(
                         username = doc.getString("username") ?: "Player",
                         userAvatarFileName = doc.getString("userAvatarFileName"),
                         rating = doc.getDouble("rating")?.toFloat() ?: 0f,
-                        reviewText = doc.getString("reviewText") ?: "",
+                        reviewText = doc.getString("reviewText").orEmpty(),
                         timestamp = doc.getLong("timestamp") ?: 0L
                     )
                 }
@@ -181,7 +158,7 @@ class GameDetailViewModel(
                 user.displayName?.ifBlank { null } ?: user.email?.substringBefore("@") ?: "Player"
             }
 
-            val reviewData = hashMapOf(
+            val reviewData = mapOf(
                 "userId" to user.uid,
                 "username" to usernameToUse,
                 "rating" to rating,
@@ -189,15 +166,13 @@ class GameDetailViewModel(
                 "timestamp" to System.currentTimeMillis()
             )
 
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    firestore.collection("games_reviews")
-                        .document(currentGame.id)
-                        .collection("reviews")
-                        .document(user.uid)
-                        .set(reviewData, SetOptions.merge())
-                        .await()
-                }
+            runCatching {
+                firestore.collection("games_reviews")
+                    .document(currentGame.id)
+                    .collection("reviews")
+                    .document(user.uid)
+                    .set(reviewData, SetOptions.merge())
+                    .await()
             }
         }
     }
@@ -220,78 +195,68 @@ class GameDetailViewModel(
             }
 
             val user = auth.currentUser ?: return@launch
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    firestore.collection("games_reviews")
-                        .document(currentGame.id)
-                        .collection("reviews")
-                        .document(user.uid)
-                        .delete()
-                        .await()
-                }
+            runCatching {
+                firestore.collection("games_reviews")
+                    .document(currentGame.id)
+                    .collection("reviews")
+                    .document(user.uid)
+                    .delete()
+                    .await()
             }
         }
     }
 
-    // Load game achievements and merge with unlocked status
+    // Load game achievements reactively from Room and trigger background remote fetch if needed
     private fun loadAchievements(game: Game) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingAchievements = true) }
-
+            val localList = localGameRepository.getLocalAchievements(game.id).firstOrNull().orEmpty()
             val unlockedCloudIds = localGameRepository.getCloudCompletedAchievementIds()
-            val localEntities = localGameRepository.getLocalAchievements(game.id).firstOrNull() ?: emptyList()
-            val unlockedLocalIds = localEntities.filter { it.isCompleted }.map { it.id }.toSet()
-            val allUnlockedIds = unlockedCloudIds + unlockedLocalIds
+            val hasRealAchievements = localList.any { it.source != AchievementSource.SYSTEM_DEFAULT }
 
-            val hasFullLocalData = localEntities.isNotEmpty() && localEntities.none { it.title == "Obiettivo" }
+            // 1. If local cache already contains real achievements, render immediately and finish
+            if (hasRealAchievements) {
+                val mergedLocal = localList.map { ach ->
+                    ach.copy(isCompleted = ach.isCompleted || unlockedCloudIds.contains(ach.id))
+                }
+                _uiState.update { it.copy(achievements = mergedLocal, isLoadingAchievements = false) }
+                return@launch
+            }
 
-            val finalAchievements = if (hasFullLocalData) {
-                localEntities.map { ach -> ach.copy(isCompleted = allUnlockedIds.contains(ach.id)) }
+            // 2. Show cached defaults immediately while fetching in background
+            if (localList.isNotEmpty()) {
+                val mergedDefaults = localList.map { ach ->
+                    ach.copy(isCompleted = ach.isCompleted || unlockedCloudIds.contains(ach.id))
+                }
+                _uiState.update { it.copy(achievements = mergedDefaults, isLoadingAchievements = true) }
             } else {
-                val fetched = achievementRepository.getAchievements(
+                _uiState.update { it.copy(isLoadingAchievements = true) }
+            }
+
+            // 3. Background fetch from remote sources
+            val remoteList = runCatching {
+                achievementRepository.getAchievements(
                     gameId = game.id,
                     gameTitle = game.title,
                     platforms = game.platforms,
                     steamAppId = game.steamAppId,
                     retroGameId = game.retroGameId
                 )
+            }.getOrDefault(emptyList())
 
-                val baseAchievements = fetched.ifEmpty { createDefaultAchievements(game.id) }
-                baseAchievements.map { ach -> ach.copy(isCompleted = allUnlockedIds.contains(ach.id)) }
+            val finalAchievements = when {
+                remoteList.isNotEmpty() -> remoteList.map { ach ->
+                    ach.copy(isCompleted = unlockedCloudIds.contains(ach.id))
+                }
+                localList.isNotEmpty() -> localList
+                else -> achievementRepository.createDefaultSystemAchievements(game.id)
             }
 
-            _uiState.update {
-                it.copy(achievements = finalAchievements, isLoadingAchievements = false)
-            }
+            _uiState.update { it.copy(achievements = finalAchievements, isLoadingAchievements = false) }
 
-            val isSavedLocally = localGameRepository.getGameById(game.id).firstOrNull() != null
-            if (isSavedLocally) {
-                localGameRepository.saveAchievements(game.id, finalAchievements)
-            }
+            // Persist game entity and achievements to Room
+            localGameRepository.saveGame(game)
+            localGameRepository.saveAchievements(game.id, finalAchievements)
         }
-    }
-
-    private fun createDefaultAchievements(gameId: String): List<Achievement> {
-        return listOf(
-            Achievement(
-                id = "${gameId}_started",
-                gameId = gameId,
-                title = "Iniziato",
-                description = "Hai iniziato a giocare a questo titolo.",
-                iconUrl = "",
-                isCompleted = false,
-                source = AchievementSource.SYSTEM_DEFAULT
-            ),
-            Achievement(
-                id = "${gameId}_completed",
-                gameId = gameId,
-                title = "Completato",
-                description = "Hai portato a termine la storia o i contenuti principali.",
-                iconUrl = "",
-                isCompleted = false,
-                source = AchievementSource.SYSTEM_DEFAULT
-            )
-        )
     }
 
     // Toggle achievement completion and adjust overall game progress status
@@ -308,23 +273,12 @@ class GameDetailViewModel(
 
         val completedCount = updatedList.count { it.isCompleted }
         val totalCount = updatedList.size
-        val isSystemDefault = updatedList.any { it.source == AchievementSource.SYSTEM_DEFAULT }
 
         val newGameStatus = when {
-            isSystemDefault -> {
-                val isCompletedAchUnlocked = updatedList.any { ach ->
-                    (ach.id.endsWith("_completed") || ach.id.contains("completed", ignoreCase = true)) && ach.isCompleted
-                } || (completedCount == totalCount && totalCount > 0)
-
-                when {
-                    isCompletedAchUnlocked -> GameStatus.COMPLETED
-                    completedCount > 0 -> GameStatus.NOT_COMPLETED
-                    else -> if (currentGame.status == GameStatus.TO_PLAY) GameStatus.TO_PLAY else GameStatus.NONE
-                }
-            }
             completedCount == totalCount && totalCount > 0 -> GameStatus.COMPLETED
             completedCount > 0 -> GameStatus.NOT_COMPLETED
-            else -> if (currentGame.status == GameStatus.TO_PLAY) GameStatus.TO_PLAY else GameStatus.NONE
+            currentGame.status == GameStatus.TO_PLAY -> GameStatus.TO_PLAY
+            else -> GameStatus.NONE
         }
 
         val updatedGame = currentGame.copy(status = newGameStatus)

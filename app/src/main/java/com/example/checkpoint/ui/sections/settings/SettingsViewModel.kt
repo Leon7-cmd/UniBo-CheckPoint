@@ -7,7 +7,6 @@ import com.example.checkpoint.data.model.AppSettings
 import com.example.checkpoint.data.model.AppThemeMode
 import com.example.checkpoint.data.model.PrivacyLevel
 import com.example.checkpoint.data.repository.SettingsRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +32,7 @@ class SettingsViewModel(
 
     init {
         // Sync user settings from cloud on initialization
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val synced = settingsRepository.syncSettingsFromCloud()
             persistedSettings = synced
             _uiState.update {
@@ -96,9 +95,9 @@ class SettingsViewModel(
 
     // Persist all modified settings locally and to cloud
     fun saveAllSettings() {
-        viewModelScope.launch(Dispatchers.IO) {
+        val currentSettings = _uiState.value.settings
+        viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
-            val currentSettings = _uiState.value.settings
             settingsRepository.saveSettings(currentSettings)
             persistedSettings = currentSettings
             _uiState.update {

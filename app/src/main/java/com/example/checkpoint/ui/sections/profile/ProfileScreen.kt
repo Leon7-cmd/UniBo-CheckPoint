@@ -21,10 +21,10 @@ import com.example.checkpoint.ui.sections.profile.components.badge.BadgesSection
  */
 @Composable
 fun ProfileScreen(
+    modifier: Modifier = Modifier,
     uiState: ProfileUiState,
     onSeeAllBadgesClick: () -> Unit,
-    onAvatarSelected: (Uri?) -> Unit,
-    modifier: Modifier = Modifier
+    onAvatarSelected: (Uri?) -> Unit
 ) {
     // Activity launcher for photo picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -39,8 +39,9 @@ fun ProfileScreen(
     ) {
         item(key = "header_title") {
             Text(
-                text = "PROFILO",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                text = "Profilo",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
         }

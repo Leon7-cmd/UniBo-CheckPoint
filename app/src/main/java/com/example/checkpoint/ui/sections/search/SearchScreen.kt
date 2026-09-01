@@ -21,6 +21,7 @@ import com.example.checkpoint.ui.sections.search.components.SearchInputRow
 
 @Composable
 fun SearchScreen(
+    modifier: Modifier = Modifier,
     onGameClick: (String) -> Unit,
     viewModel: SearchViewModel = viewModel()
 ) {
@@ -31,7 +32,7 @@ fun SearchScreen(
     var isFilterPanelOpen by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {

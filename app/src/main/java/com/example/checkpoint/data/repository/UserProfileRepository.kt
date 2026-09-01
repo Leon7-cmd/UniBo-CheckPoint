@@ -16,6 +16,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+private const val PREFS_NAME = "checkpoint_user_prefs"
+private fun keyUsername(uid: String) = "key_username_$uid"
+private fun keyFriendCode(uid: String) = "key_friend_code_$uid"
+private fun keyAvatar(uid: String) = "key_avatar_$uid"
+
 /**
  * Immutable representation of the cached and synchronized user profile information.
  */
@@ -232,12 +237,5 @@ class UserProfileRepository(
             settingsRepository?.resetOnLogout()
             auth.signOut()
         }
-    }
-
-    companion object {
-        private const val PREFS_NAME = "checkpoint_user_prefs"
-        private fun keyUsername(uid: String) = "key_username_$uid"
-        private fun keyFriendCode(uid: String) = "key_friend_code_$uid"
-        private fun keyAvatar(uid: String) = "key_avatar_$uid"
     }
 }

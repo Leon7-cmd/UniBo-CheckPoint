@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,15 +39,13 @@ fun GameCard(
 
     // Constrain image decoding dimensions for performance
     val imageRequest = remember(game.coverUrl) {
-        if (game.coverUrl.isNotBlank()) {
+        game.coverUrl.ifBlank { null }?.let { url ->
             ImageRequest.Builder(context)
-                .data(game.coverUrl)
+                .data(url)
                 .size(240, 320)
                 .scale(Scale.FILL)
                 .crossfade(true)
                 .build()
-        } else {
-            null
         }
     }
 
@@ -62,25 +59,15 @@ fun GameCard(
     ) {
         Column {
             // Game poster image or placeholder
-            if (imageRequest != null) {
-                AsyncImage(
-                    model = imageRequest,
-                    contentDescription = game.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-            }
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = game.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(3f / 4f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            )
 
             // Info column: title, platform, rating
             Column(

@@ -13,11 +13,11 @@ import com.example.checkpoint.ui.sections.library.components.SpecificSectionDeta
  */
 @Composable
 fun LibraryScreen(
+    modifier: Modifier = Modifier,
     uiState: LibraryUiState,
     onSectionSelected: (LibrarySectionType?) -> Unit,
     onBackToMainLibrary: () -> Unit,
-    onGameClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onGameClick: (String) -> Unit
 ) {
     // Intercept back navigation when browsing inside a specific section
     BackHandler(enabled = uiState.currentSection != null) {

@@ -2,7 +2,6 @@ package com.example.checkpoint.ui.sections.auth
 
 import android.util.Patterns
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.checkpoint.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
@@ -103,17 +102,5 @@ class AuthViewModel(
 
     fun resetState() {
         _uiState.update { AuthUiState.Idle }
-    }
-
-    class Factory(
-        private val userProfileRepository: UserProfileRepository
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
-                return AuthViewModel(userProfileRepository) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
-        }
     }
 }

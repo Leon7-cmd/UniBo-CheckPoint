@@ -109,6 +109,7 @@ class SearchViewModel(
             }
     }
 
+    // Function created to toggle a value in a set and simplify the 3 toggle functions
     private fun <T> Set<T>.toggle(item: T): Set<T> =
         if (contains(item)) this - item else this + item
 }

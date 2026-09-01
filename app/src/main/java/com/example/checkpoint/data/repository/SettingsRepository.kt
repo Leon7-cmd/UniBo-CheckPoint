@@ -19,6 +19,55 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
+private const val PREFS_NAME = "checkpoint_settings_prefs"
+
+private fun keyTheme(uid: String?) = "setting_theme_${uid.orEmpty()}"
+private fun keyAccent(uid: String?) = "setting_accent_${uid.orEmpty()}"
+private fun keyStatsPrivacy(uid: String?) = "setting_stats_privacy_${uid.orEmpty()}"
+private fun keyBadgesPrivacy(uid: String?) = "setting_badges_privacy_${uid.orEmpty()}"
+private fun keyLibraryPrivacy(uid: String?) = "setting_library_privacy_${uid.orEmpty()}"
+
+private val _settings = MutableStateFlow(AppSettings())
+val globalAppSettings: StateFlow<AppSettings> = _settings.asStateFlow()
+
+private fun readSettingsFromPrefs(prefs: SharedPreferences, uid: String?): AppSettings {
+    val themeStr = prefs.getString(keyTheme(uid), AppThemeMode.SYSTEM.name)
+    val accentStr = prefs.getString(keyAccent(uid), AppAccentColor.PURPLE.name)
+    val statsPrivacyStr = prefs.getString(keyStatsPrivacy(uid), PrivacyLevel.PUBLIC.name)
+    val badgesPrivacyStr = prefs.getString(keyBadgesPrivacy(uid), PrivacyLevel.PUBLIC.name)
+    val libraryPrivacyStr = prefs.getString(keyLibraryPrivacy(uid), PrivacyLevel.PUBLIC.name)
+
+    return AppSettings(
+        themeMode = parseEnum(themeStr, AppThemeMode.SYSTEM),
+        accentColor = parseEnum(accentStr, AppAccentColor.PURPLE),
+        showStatsPrivacy = parseEnum(statsPrivacyStr, PrivacyLevel.PUBLIC),
+        showBadgesPrivacy = parseEnum(badgesPrivacyStr, PrivacyLevel.PUBLIC),
+        showLibraryPrivacy = parseEnum(libraryPrivacyStr, PrivacyLevel.PUBLIC)
+    )
+}
+
+private fun writeSettingsToPrefs(prefs: SharedPreferences, uid: String, settings: AppSettings) {
+    prefs.edit {
+        putString(keyTheme(uid), settings.themeMode.name)
+        putString(keyAccent(uid), settings.accentColor.name)
+        putString(keyStatsPrivacy(uid), settings.showStatsPrivacy.name)
+        putString(keyBadgesPrivacy(uid), settings.showBadgesPrivacy.name)
+        putString(keyLibraryPrivacy(uid), settings.showLibraryPrivacy.name)
+    }
+}
+
+private inline fun <reified T : Enum<T>> parseEnum(value: String?, default: T): T {
+    if (value == null) return default
+    return runCatching { enumValueOf<T>(value) }.getOrDefault(default)
+}
+
+// Synchronous early initialization before setContent in MainActivity
+fun initAppSettings(context: Context) {
+    val uid = FirebaseAuth.getInstance().currentUser?.uid
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    _settings.update { readSettingsFromPrefs(prefs, uid) }
+}
+
 /**
  * Repository managing application theme preferences, dynamic accent colors, privacy toggles, and Firestore syncing.
  */
@@ -32,6 +81,8 @@ class SettingsRepository(
 
     private val currentUid: String?
         get() = auth.currentUser?.uid
+
+    val settings: StateFlow<AppSettings> = globalAppSettings
 
     init {
         loadCachedSettings()
@@ -121,56 +172,5 @@ class SettingsRepository(
 
     fun resetOnLogout() {
         _settings.update { AppSettings() }
-    }
-
-    companion object {
-        private const val PREFS_NAME = "checkpoint_settings_prefs"
-
-        private fun keyTheme(uid: String?) = "setting_theme_${uid.orEmpty()}"
-        private fun keyAccent(uid: String?) = "setting_accent_${uid.orEmpty()}"
-        private fun keyStatsPrivacy(uid: String?) = "setting_stats_privacy_${uid.orEmpty()}"
-        private fun keyBadgesPrivacy(uid: String?) = "setting_badges_privacy_${uid.orEmpty()}"
-        private fun keyLibraryPrivacy(uid: String?) = "setting_library_privacy_${uid.orEmpty()}"
-
-        private val _settings = MutableStateFlow(AppSettings())
-        val settings: StateFlow<AppSettings> = _settings.asStateFlow()
-
-        // Synchronous early initialization before setContent in MainActivity
-        fun init(context: Context) {
-            val uid = FirebaseAuth.getInstance().currentUser?.uid
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            _settings.update { readSettingsFromPrefs(prefs, uid) }
-        }
-
-        private fun readSettingsFromPrefs(prefs: SharedPreferences, uid: String?): AppSettings {
-            val themeStr = prefs.getString(keyTheme(uid), AppThemeMode.SYSTEM.name)
-            val accentStr = prefs.getString(keyAccent(uid), AppAccentColor.PURPLE.name)
-            val statsPrivacyStr = prefs.getString(keyStatsPrivacy(uid), PrivacyLevel.PUBLIC.name)
-            val badgesPrivacyStr = prefs.getString(keyBadgesPrivacy(uid), PrivacyLevel.PUBLIC.name)
-            val libraryPrivacyStr = prefs.getString(keyLibraryPrivacy(uid), PrivacyLevel.PUBLIC.name)
-
-            return AppSettings(
-                themeMode = parseEnum(themeStr, AppThemeMode.SYSTEM),
-                accentColor = parseEnum(accentStr, AppAccentColor.PURPLE),
-                showStatsPrivacy = parseEnum(statsPrivacyStr, PrivacyLevel.PUBLIC),
-                showBadgesPrivacy = parseEnum(badgesPrivacyStr, PrivacyLevel.PUBLIC),
-                showLibraryPrivacy = parseEnum(libraryPrivacyStr, PrivacyLevel.PUBLIC)
-            )
-        }
-
-        private fun writeSettingsToPrefs(prefs: SharedPreferences, uid: String, settings: AppSettings) {
-            prefs.edit {
-                putString(keyTheme(uid), settings.themeMode.name)
-                putString(keyAccent(uid), settings.accentColor.name)
-                putString(keyStatsPrivacy(uid), settings.showStatsPrivacy.name)
-                putString(keyBadgesPrivacy(uid), settings.showBadgesPrivacy.name)
-                putString(keyLibraryPrivacy(uid), settings.showLibraryPrivacy.name)
-            }
-        }
-
-        private inline fun <reified T : Enum<T>> parseEnum(value: String?, default: T): T {
-            if (value == null) return default
-            return runCatching { enumValueOf<T>(value) }.getOrDefault(default)
-        }
     }
 }

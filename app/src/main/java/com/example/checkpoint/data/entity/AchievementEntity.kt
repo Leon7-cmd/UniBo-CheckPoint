@@ -1,7 +1,6 @@
 package com.example.checkpoint.data.entity
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.checkpoint.data.model.Achievement
@@ -12,14 +11,6 @@ import com.example.checkpoint.data.model.AchievementSource
  */
 @Entity(
     tableName = "achievements",
-    foreignKeys = [
-        ForeignKey(
-            entity = GameEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["gameId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
     indices = [Index(value = ["gameId"])]
 )
 data class AchievementEntity(

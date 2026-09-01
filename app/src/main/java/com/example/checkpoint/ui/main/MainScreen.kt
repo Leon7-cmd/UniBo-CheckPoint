@@ -14,9 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -59,6 +59,14 @@ import kotlinx.serialization.Serializable
 @Serializable data class FriendDetailRoute(val friendId: String)
 @Serializable object FriendRequestsRoute
 
+// Function made with the sole purpose of reducing the boilerplate code for view models (almost 80 lines of code)
+@Suppress("UNCHECKED_CAST")
+@Composable
+private inline fun <reified VM : ViewModel> provideViewModel(crossinline creator: () -> VM): VM =
+    viewModel(factory = object : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = creator() as T
+    })
+
 /**
  * Main application host managing bottom bar navigation, top-level tabs, and secondary screen transitions.
  */
@@ -69,18 +77,12 @@ fun MainScreen(
     val bottomNavController = rememberNavController()
     val navBackStackEntry by bottomNavController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
-
     val appContext = LocalContext.current.applicationContext
 
     // Repositories initialization
+    val database = remember { AppDatabase.getDatabase(appContext) }
+    val localGameRepository = remember { LocalGameRepository(database.gameDao(), database.achievementDao()) }
     val userProfileRepository = remember { UserProfileRepository(appContext) }
-    val localGameRepository = remember {
-        val database = AppDatabase.getDatabase(appContext)
-        LocalGameRepository(
-            gameDao = database.gameDao(),
-            achievementDao = database.achievementDao()
-        )
-    }
     val settingsRepository = remember { SettingsRepository(appContext) }
     val friendsRepository = remember { FriendsRepository() }
 
@@ -99,18 +101,6 @@ fun MainScreen(
             retroApiService = NetworkClient.retroApiService
         )
     }
-
-    val profileViewModel: ProfileViewModel = viewModel(
-        factory = viewModelFactory {
-            initializer<ProfileViewModel> {
-                ProfileViewModel(
-                    localGameRepository = localGameRepository,
-                    userProfileRepository = userProfileRepository
-                )
-            }
-        }
-    )
-    val profileUiState by profileViewModel.uiState.collectAsState()
 
     val isTopLevelScreen = currentDestination?.hierarchy?.any { dest ->
         dest.hasRoute(ProfileRoute::class) ||
@@ -155,40 +145,40 @@ fun MainScreen(
             navController = bottomNavController,
             startDestination = ProfileRoute,
             enterTransition = {
-                fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                        scaleIn(initialScale = 0.98f, animationSpec = tween(180, easing = FastOutSlowInEasing))
+                fadeIn(tween(180, easing = FastOutSlowInEasing)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180, easing = FastOutSlowInEasing))
             },
-            exitTransition = {
-                fadeOut(animationSpec = tween(120, easing = FastOutSlowInEasing))
-            },
-            popEnterTransition = {
-                fadeIn(animationSpec = tween(180, easing = FastOutSlowInEasing))
-            },
+            exitTransition = { fadeOut(tween(120, easing = FastOutSlowInEasing)) },
+            popEnterTransition = { fadeIn(tween(180, easing = FastOutSlowInEasing)) },
             popExitTransition = {
-                fadeOut(animationSpec = tween(120, easing = FastOutSlowInEasing)) +
-                        scaleOut(targetScale = 0.98f, animationSpec = tween(120, easing = FastOutSlowInEasing))
+                fadeOut(tween(120, easing = FastOutSlowInEasing)) + scaleOut(targetScale = 0.98f, animationSpec = tween(120, easing = FastOutSlowInEasing))
             },
             modifier = Modifier.fillMaxSize()
         ) {
             // Profile Tab
             composable<ProfileRoute> {
+                val profileViewModel: ProfileViewModel = provideViewModel {
+                    ProfileViewModel(localGameRepository, userProfileRepository)
+                }
+                val profileUiState by profileViewModel.uiState.collectAsState()
+
                 ProfileScreen(
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding),
                     uiState = profileUiState,
                     onSeeAllBadgesClick = { bottomNavController.navigate(BadgesRoute) },
-                    onAvatarSelected = profileViewModel::onAvatarSelected,
-                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                    onAvatarSelected = profileViewModel::onAvatarSelected
                 )
             }
 
             // All Badges list
             composable<BadgesRoute>(
-                enterTransition = {
-                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
-                },
-                popExitTransition = {
-                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
-                }
+                enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing)) },
+                popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing)) }
             ) {
+                val profileViewModel: ProfileViewModel = provideViewModel {
+                    ProfileViewModel(localGameRepository, userProfileRepository)
+                }
+                val profileUiState by profileViewModel.uiState.collectAsState()
+
                 BadgesListScreen(
                     badges = profileUiState.badges,
                     onBackClick = { bottomNavController.popBackStack() }
@@ -197,63 +187,39 @@ fun MainScreen(
 
             // Library Tab
             composable<LibraryRoute> {
-                val libraryViewModel: LibraryViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<LibraryViewModel> {
-                            LibraryViewModel(
-                                localGameRepository = localGameRepository
-                            )
-                        }
-                    }
-                )
+                val libraryViewModel: LibraryViewModel = provideViewModel {
+                    LibraryViewModel(localGameRepository)
+                }
                 val uiState by libraryViewModel.uiState.collectAsState()
 
                 LibraryScreen(
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding),
                     uiState = uiState,
                     onSectionSelected = libraryViewModel::selectSection,
                     onBackToMainLibrary = libraryViewModel::clearSelectedSection,
-                    onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) },
-                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                    onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) }
                 )
             }
 
             // Search Tab
             composable<SearchRoute> {
                 val searchViewModel: SearchViewModel = viewModel()
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = topPadding, bottom = bottomBarPadding)
-                ) {
-                    SearchScreen(
-                        onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) },
-                        viewModel = searchViewModel
-                    )
-                }
+                SearchScreen(
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding),
+                    onGameClick = { gameId -> bottomNavController.navigate(GameDetailRoute(gameId)) },
+                    viewModel = searchViewModel
+                )
             }
 
             // Game Detail
             composable<GameDetailRoute>(
-                enterTransition = {
-                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
-                },
-                popExitTransition = {
-                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
-                }
+                enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing)) },
+                popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing)) }
             ) { backStackEntry ->
                 val route: GameDetailRoute = backStackEntry.toRoute()
-                val detailViewModel: GameDetailViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<GameDetailViewModel> {
-                            GameDetailViewModel(
-                                igdbRepository = igdbRepository,
-                                achievementRepository = achievementRepository,
-                                localGameRepository = localGameRepository,
-                                userProfileRepository = userProfileRepository
-                            )
-                        }
-                    }
-                )
+                val detailViewModel: GameDetailViewModel = provideViewModel {
+                    GameDetailViewModel(igdbRepository, achievementRepository, localGameRepository, userProfileRepository)
+                }
                 val uiState by detailViewModel.uiState.collectAsState()
 
                 LaunchedEffect(route.gameId) {
@@ -295,43 +261,31 @@ fun MainScreen(
 
             // Friends Tab
             composable<FriendsRoute> {
-                val friendsViewModel: FriendsViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<FriendsViewModel> {
-                            FriendsViewModel(friendsRepository = friendsRepository)
-                        }
-                    }
-                )
+                val friendsViewModel: FriendsViewModel = provideViewModel {
+                    FriendsViewModel(friendsRepository)
+                }
                 val uiState by friendsViewModel.uiState.collectAsState()
 
                 FriendsScreen(
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding),
                     uiState = uiState,
                     onSearchQueryChange = friendsViewModel::onSearchQueryChanged,
                     onOpenAddFriend = friendsViewModel::openAddFriendDialog,
                     onOpenRequestsClick = { bottomNavController.navigate(FriendRequestsRoute) },
                     onCloseAddFriend = friendsViewModel::closeAddFriendDialog,
                     onAddFriendConfirm = friendsViewModel::addFriend,
-                    onFriendClick = { friendId -> bottomNavController.navigate(FriendDetailRoute(friendId)) },
-                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                    onFriendClick = { friendId -> bottomNavController.navigate(FriendDetailRoute(friendId)) }
                 )
             }
 
             // Friend Requests Screen
             composable<FriendRequestsRoute>(
-                enterTransition = {
-                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
-                },
-                popExitTransition = {
-                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
-                }
+                enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing)) },
+                popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing)) }
             ) {
-                val friendsViewModel: FriendsViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<FriendsViewModel> {
-                            FriendsViewModel(friendsRepository = friendsRepository)
-                        }
-                    }
-                )
+                val friendsViewModel: FriendsViewModel = provideViewModel {
+                    FriendsViewModel(friendsRepository)
+                }
                 val uiState by friendsViewModel.uiState.collectAsState()
 
                 FriendRequestsScreen(
@@ -344,21 +298,13 @@ fun MainScreen(
 
             // Friend Detail Screen
             composable<FriendDetailRoute>(
-                enterTransition = {
-                    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing))
-                },
-                popExitTransition = {
-                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing))
-                }
+                enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(220, easing = FastOutSlowInEasing)) },
+                popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200, easing = FastOutSlowInEasing)) }
             ) { backStackEntry ->
                 val route: FriendDetailRoute = backStackEntry.toRoute()
-                val friendsViewModel: FriendsViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<FriendsViewModel> {
-                            FriendsViewModel(friendsRepository = friendsRepository)
-                        }
-                    }
-                )
+                val friendsViewModel: FriendsViewModel = provideViewModel {
+                    FriendsViewModel(friendsRepository)
+                }
 
                 var friend by remember { mutableStateOf<Friend?>(null) }
                 var isLoadingFriend by remember { mutableStateOf(true) }
@@ -393,16 +339,13 @@ fun MainScreen(
 
             // Settings Tab
             composable<SettingsRoute> {
-                val settingsViewModel: SettingsViewModel = viewModel(
-                    factory = viewModelFactory {
-                        initializer<SettingsViewModel> {
-                            SettingsViewModel(settingsRepository = settingsRepository)
-                        }
-                    }
-                )
+                val settingsViewModel: SettingsViewModel = provideViewModel {
+                    SettingsViewModel(settingsRepository)
+                }
                 val uiState by settingsViewModel.uiState.collectAsState()
 
                 SettingsScreen(
+                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding),
                     uiState = uiState,
                     onThemeChange = settingsViewModel::updateTheme,
                     onAccentColorChange = settingsViewModel::updateAccentColor,
@@ -415,8 +358,7 @@ fun MainScreen(
                     onLogoutClick = {
                         settingsRepository.resetOnLogout()
                         onLogout()
-                    },
-                    modifier = Modifier.padding(top = topPadding, bottom = bottomBarPadding)
+                    }
                 )
             }
         }

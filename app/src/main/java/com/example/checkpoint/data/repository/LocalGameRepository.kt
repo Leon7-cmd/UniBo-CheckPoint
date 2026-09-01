@@ -200,8 +200,8 @@ class LocalGameRepository(
         val id = doc.getString("id") ?: doc.id
         val title = doc.getString("title") ?: return null
 
-        val platformsList = (doc.get("platforms") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
-        val tagsList = (doc.get("tags") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+        val platformsList = (doc.get("platforms") as? List<*>)?.filterIsInstance<String>().orEmpty()
+        val tagsList = (doc.get("tags") as? List<*>)?.filterIsInstance<String>().orEmpty()
 
         return GameEntity(
             id = id,
@@ -226,26 +226,24 @@ class LocalGameRepository(
         )
     }
 
-    private fun entityToMap(entity: GameEntity): Map<String, Any?> {
-        return mapOf(
-            "id" to entity.id,
-            "title" to entity.title,
-            "coverUrl" to entity.coverUrl,
-            "releaseDate" to entity.releaseDate,
-            "developer" to entity.developer,
-            "publisher" to entity.publisher,
-            "description" to entity.description,
-            "platforms" to entity.platforms,
-            "tags" to entity.tags,
-            "isFavorite" to entity.isFavorite,
-            "status" to entity.status.name,
-            "rating" to entity.rating.toDouble(),
-            "communityRating" to entity.communityRating?.toDouble(),
-            "userReview" to entity.userReview,
-            "note" to entity.note,
-            "steamAppId" to entity.steamAppId,
-            "retroGameId" to entity.retroGameId,
-            "updatedAt" to System.currentTimeMillis()
-        )
-    }
+    private fun entityToMap(entity: GameEntity): Map<String, Any?> = mapOf(
+        "id" to entity.id,
+        "title" to entity.title,
+        "coverUrl" to entity.coverUrl,
+        "releaseDate" to entity.releaseDate,
+        "developer" to entity.developer,
+        "publisher" to entity.publisher,
+        "description" to entity.description,
+        "platforms" to entity.platforms,
+        "tags" to entity.tags,
+        "isFavorite" to entity.isFavorite,
+        "status" to entity.status.name,
+        "rating" to entity.rating.toDouble(),
+        "communityRating" to entity.communityRating?.toDouble(),
+        "userReview" to entity.userReview,
+        "note" to entity.note,
+        "steamAppId" to entity.steamAppId,
+        "retroGameId" to entity.retroGameId,
+        "updatedAt" to System.currentTimeMillis()
+    )
 }

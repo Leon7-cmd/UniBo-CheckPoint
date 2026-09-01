@@ -17,22 +17,23 @@ import com.example.checkpoint.ui.sections.library.LibrarySectionType
  */
 @Composable
 fun MainLibraryOverviewContent(
+    modifier: Modifier = Modifier,
     overview: LibraryOverviewData,
     onSeeAllClick: (LibrarySectionType) -> Unit,
-    onGameClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onGameClick: (String) -> Unit
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         item(key = "header_title") {
             Text(
-                text = "LIBRERIA",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                text = "Libreria",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
 
@@ -42,7 +43,7 @@ fun MainLibraryOverviewContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 64.dp, start = 16.dp, end = 16.dp),
+                        .padding(top = 48.dp, start = 16.dp, end = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(

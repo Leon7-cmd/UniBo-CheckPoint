@@ -9,7 +9,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.checkpoint.data.model.AppThemeMode
-import com.example.checkpoint.data.repository.SettingsRepository
+import com.example.checkpoint.data.repository.globalAppSettings
+import com.example.checkpoint.data.repository.initAppSettings
 import com.example.checkpoint.ui.navigation.AppNavigation
 import com.example.checkpoint.ui.theme.CheckpointTheme
 
@@ -18,11 +19,11 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
 
-        SettingsRepository.init(applicationContext)
+        initAppSettings(applicationContext)
         enableEdgeToEdge()
 
         setContent {
-            val currentSettings by SettingsRepository.settings.collectAsState()
+            val currentSettings by globalAppSettings.collectAsState()
 
             // Resolve theme mode
             val isDarkTheme = when (currentSettings.themeMode) {

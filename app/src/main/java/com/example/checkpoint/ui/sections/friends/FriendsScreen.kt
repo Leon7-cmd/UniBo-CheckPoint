@@ -25,14 +25,14 @@ import com.example.checkpoint.ui.sections.friends.components.main.FriendGridItem
  */
 @Composable
 fun FriendsScreen(
+    modifier: Modifier = Modifier,
     uiState: FriendsUiState,
     onSearchQueryChange: (String) -> Unit,
     onOpenAddFriend: () -> Unit,
     onOpenRequestsClick: () -> Unit,
     onCloseAddFriend: () -> Unit,
     onAddFriendConfirm: (String) -> Unit,
-    onFriendClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onFriendClick: (String) -> Unit
 ) {
     // Add friend dialog prompt
     AddFriendDialog(
@@ -46,9 +46,8 @@ fun FriendsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .padding(top = 12.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Section header and actions
         Row(
@@ -57,8 +56,9 @@ fun FriendsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "AMICI",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                text = "Amici",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
@@ -155,6 +155,7 @@ fun FriendsScreen(
             ) {
                 Text(
                     text = if (uiState.searchQuery.isBlank()) "Nessun amico aggiunto ancora." else "Nessun amico trovato.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

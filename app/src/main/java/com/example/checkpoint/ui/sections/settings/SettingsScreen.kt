@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun SettingsScreen(
+    modifier: Modifier = Modifier,
     uiState: SettingsUiState,
     onThemeChange: (AppThemeMode) -> Unit,
     onAccentColorChange: (AppAccentColor) -> Unit,
@@ -39,8 +40,7 @@ fun SettingsScreen(
     onRevertSettings: () -> Unit,
     onDismissBanner: () -> Unit,
     onLogoutClick: () -> Unit,
-    onNavigateBack: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onNavigateBack: (() -> Unit)? = null
 ) {
     var showDiscardDialog by remember { mutableStateOf(false) }
 
@@ -75,8 +75,9 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "IMPOSTAZIONI",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                text = "Settings",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
