@@ -5,9 +5,9 @@
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
 ![Room](https://img.shields.io/badge/Room%20DB-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=black)
+![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)
 
 > *A native Android platform for video game collection management and cross-platform achievement tracking.*
-
 
 ## ℹ️ Overview
 
@@ -46,11 +46,11 @@ To build and run the project locally:
 1. Clone the repository:
    git clone https://github.com/Leon7-cmd/checkpoint.git
 
-2. Open the project in **Android Studio** (Hedgehog or newer recommended).
+2. Open the project in Android Studio (Hedgehog or newer recommended).
 
-3. Place your `google-services.json` file inside the `/app` directory to enable Firebase services.
+3. Place your google-services.json file inside the /app directory to enable Firebase services.
 
-4. Add your IGDB/Twitch API credentials to `local.properties`:
+4. Add your IGDB/Twitch API credentials to local.properties:
    TWITCH_CLIENT_ID="your_client_id_here"
    TWITCH_CLIENT_SECRET="your_client_secret_here"
 
@@ -60,10 +60,13 @@ To build and run the project locally:
 
 To test the pre-compiled binary on an Android device:
 
-1. Navigate to the repository's [Releases](https://github.com/Leon7-cmd/checkpoint/releases) page.
-2. Download the latest **`checkpoint-app-release.apk`**.
-3. If prompted, allow installations from unknown sources in Android's security settings and install.
+1. Navigate to the repository's Releases page:
+   https://github.com/Leon7-cmd/checkpoint/releases
+
+2. Download the latest checkpoint-app-release.apk.
+
+3. If prompted, allow installations from unknown sources in Android security settings and install.
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for details.
+Distributed under the GNU General Public License v3.0 (GPLv3). See the LICENSE file for details.
